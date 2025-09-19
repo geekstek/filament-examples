@@ -1,0 +1,453 @@
+---
+description: Laravel 12 Model 开发规范与最佳实践
+globs: src/Models/*.php
+---
+# Laravel 模型类开发规范
+
+基于项目中现有模型类的分析，总结出以下 Laravel 模型开发的最佳实践和规范。
+
+## 基础结构规范
+
+### 1. 文件头声明
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\Administrative\Models;
+
+// 导入语句按以下顺序排列：
+// 1. 枚举类
+// 2. 外部服务类
+// 3. 其他模型类
+// 4. Laravel 核心类
+// 5. 第三方包类
+use Geekstek\Administrative\Enums\EmployeeContractStatus;
+use Geekstek\Support\Services\StorageService;
+use Geekstek\Uacl\Models\User;
+use Geekstek\Uacl\Traits\Companyable;
+use Illuminate\Database\Eloquent\Model;
+use Spatie\QueryBuilder\AllowedFilter;
+```
+
+### 2. 类声明和 Trait 使用
+```php
+class EmployeeProfile extends Model
+{
+    // Trait 使用顺序：
+    // 1. 业务逻辑相关 Trait (Companyable 等)
+    // 2. Laravel 核心 Trait (HasFactory, SoftDeletes 等)
+    use Companyable;
+    use HasFactory;
+}
+```
+
+## 属性定义规范
+
+### 1. 表名定义
+```php
+/**
+ * 数据表名称
+ */
+protected $table = 'hra_employee_profiles';
+```
+
+### 2. 可批量赋值属性
+```php
+/**
+ * 可批量赋值的属性
+ */
+protected $fillable = [
+    'company_id',
+    'user_id',
+    'employee_number',
+    'joined_date',
+    'marital_status',
+    'political_status',
+];
+```
+
+### 3. 类型转换 (推荐使用方法形式)
+```php
+// 优先使用方法形式的 casts (Laravel 11+)
+protected function casts(): array
+{
+    return [
+        'joined_date' => 'date:Y-m-d',
+        'marital_status' => EmployeeMaritalStatus::class,
+        'political_status' => EmployeePoliticalStatus::class,
+        'is_active' => 'boolean',
+        'amount' => 'decimal:2',
+        'created_at' => 'datetime:Y-m-d H:i:s',
+    ];
+}
+
+// 向后兼容的属性形式
+protected $casts = [
+    'joined_date' => 'date:Y-m-d',
+    'status' => EmployeeContractStatus::class,
+    'attachment' => 'array',
+];
+```
+
+### 4. 附加属性
+```php
+protected $appends = [
+    'contract_file_url',
+    'attachment_url',
+];
+```
+
+## 关联关系规范
+
+### 1. 关联关系定义顺序
+按以下顺序定义关联关系：
+1. BelongsTo 关系
+2. HasOne/HasOneThrough 关系  
+3. HasMany/HasManyThrough 关系
+
+### 2. 关联关系命名
+```php
+// BelongsTo - 使用单数名词
+public function employee(): BelongsTo
+{
+    return $this->belongsTo(EmployeeProfile::class, 'employee_id');
+}
+
+public function certificateType(): BelongsTo
+{
+    return $this->belongsTo(CertificateType::class, 'certificate_type_id');
+}
+
+// HasMany - 使用复数名词
+public function certificates(): HasMany
+{
+    return $this->hasMany(EmployeeCertificate::class, 'employee_id');
+}
+
+public function workExperiences(): HasMany
+{
+    return $this->hasMany(EmployeeWorkExperience::class, 'employee_id');
+}
+```
+
+### 3. HasOneThrough/HasManyThrough 关系
+```php
+public function user(): HasOneThrough
+{
+    return $this->hasOneThrough(
+        User::class,
+        EmployeeProfile::class,
+        'id', // EmployeeProfile 表的外键
+        'id', // User 表的外键
+        'employee_id', // 当前表的外键
+        'user_id' // EmployeeProfile 表的主键
+    );
+}
+```
+
+## 访问器和修改器规范
+
+### 1. 使用 Attribute 类 (Laravel 9+)
+```php
+use Illuminate\Database\Eloquent\Casts\Attribute;
+
+/**
+ * 开始日期的 Accessor 和 Mutator
+ * 数据库存储格式：YYYY-MM
+ * 表单显示格式：YYYY-MM
+ */
+protected function startDate(): Attribute
+{
+    return Attribute::make(
+        get: fn (?string $value) => $value ? Carbon::createFromFormat('Y-m', $value)->format('Y-m') : null,
+        set: function (?string $value) {
+            if (empty($value)) {
+                return null;
+            }
+            
+            // 处理不同日期格式的转换逻辑
+            if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value)) {
+                return Carbon::parse($value)->format('Y-m');
+            }
+            
+            return $value;
+        }
+    );
+}
+```
+
+### 2. 文件 URL 访问器
+```php
+public function getContractFileUrlAttribute(): ?string
+{
+    return $this->contract_file ? StorageService::getUrlPath($this->contract_file) : null;
+}
+
+public function getAttachmentUrlAttribute(): array
+{
+    return array_map(function ($file) {
+        return StorageService::getUrlPath($file);
+    }, $this->attachment ?? []);
+}
+```
+
+## 业务逻辑方法规范
+
+### 1. 状态判断方法
+```php
+/**
+ * 检查是否即将过期 (30天内)
+ */
+public function isAboutToExpire(): bool
+{
+    if (!$this->expiry_date) {
+        return false;
+    }
+    
+    return $this->expiry_date->between(now(), now()->addDays(30));
+}
+```
+
+### 2. 计算和分析方法
+```php
+/**
+ * 获取血压状态
+ */
+public function getBloodPressureStatus(): string
+{
+    return match (true) {
+        $this->systolic >= 180 || $this->diastolic >= 110 => '高血压危象',
+        $this->systolic >= 140 || $this->diastolic >= 90 => '高血压',
+        $this->systolic >= 120 || $this->diastolic >= 80 => '正常高值',
+        $this->systolic < 90 || $this->diastolic < 60 => '低血压',
+        default => '正常',
+    };
+}
+```
+
+## 查询范围 (Scope) 规范
+
+### 1. 范围查询命名
+```php
+/**
+ * 按员工ID查询
+ */
+public function scopeEmployee(Builder $query, int $employeeId): void
+{
+    $query->where('employee_id', $employeeId);
+}
+
+/**
+ * 按时间范围查询
+ */
+public function scopeDateRange(Builder $query, ?string $startDate, ?string $endDate): void
+{
+    if ($startDate) {
+        $query->where('measurement_at', '>=', $startDate);
+    }
+    
+    if ($endDate) {
+        $query->where('measurement_at', '<=', $endDate);
+    }
+}
+
+/**
+ * 获取最新记录
+ */
+public function scopeLatest(Builder $query): void
+{
+    $subQuery = static::selectRaw('employee_id, MAX(measurement_at) as latest_measurement')
+        ->groupBy('employee_id');
+        
+    $query->joinSub($subQuery, 'latest_records', function ($join) {
+        $join->on('table.employee_id', '=', 'latest_records.employee_id')
+            ->on('table.measurement_at', '=', 'latest_records.latest_measurement');
+    });
+}
+```
+
+## 模型事件处理
+
+### 1. 使用 boot 方法
+```php
+public static function boot()
+{
+    parent::boot();
+    
+    static::saving(function ($model) {
+        if ($model->expiry_date && $model->expiry_date < now()) {
+            $model->status = 'expired';
+        }
+    });
+}
+```
+
+## API 支持方法
+
+### 1. Query Builder 支持
+```php
+public static function getAllowedFields(bool $withTableName = false): array
+{
+    $fields = [
+        'id',
+        'company_id',
+        'user_id',
+        'employee_number',
+    ];
+    
+    if ($withTableName) {
+        $tableName = (new static())->getTable();
+        $fields = array_map(fn ($field) => $tableName . '.' . $field, $fields);
+    } else {
+        $fields = array_merge(
+            $fields,
+            User::getAllowedFields(true),
+            // 其他关联模型的字段
+        );
+    }
+    
+    return $fields;
+}
+
+public static function getAllowedFilters(): array
+{
+    return [
+        AllowedFilter::exact('id'),
+        AllowedFilter::exact('company_id'),
+        AllowedFilter::exact('status'),
+    ];
+}
+
+public static function getAllowedSorts(): array
+{
+    return [
+        'id',
+        'created_at',
+        'updated_at',
+    ];
+}
+
+public static function getAllowedIncludes(): array
+{
+    return [
+        'user',
+        'employee',
+        'certificates',
+    ];
+}
+```
+
+## 工厂方法
+
+### 1. 模型工厂
+```php
+/**
+ * 创建模型工厂实例
+ */
+public static function newFactory()
+{
+    return EmployeeProfileFactory::new();
+}
+```
+
+## 命名规范总结
+
+### 1. 表名规范
+- 使用 `hra_` 前缀
+- 使用复数形式
+- 使用下划线分隔单词
+
+### 2. 模型类命名
+- 使用 PascalCase
+- 使用单数形式
+- 描述性强的名称
+
+### 3. 方法命名
+- 关联关系：单数用于 BelongsTo，复数用于 HasMany
+- Scope 方法：使用 `scope` 前缀
+- 判断方法：使用 `is` 前缀返回 boolean
+- 获取方法：使用 `get` 前缀
+
+### 4. 属性命名
+- 使用 snake_case
+- 布尔字段使用 `is_` 前缀
+- 日期字段使用 `_at` 或 `_date` 后缀
+
+## 注释规范
+
+### 1. 类注释
+```php
+/**
+ * 数据表名称
+ */
+protected $table = 'hra_employee_profiles';
+
+/**
+ * 可批量赋值的属性
+ */
+protected $fillable = [...];
+```
+
+### 2. 方法注释
+```php
+/**
+ * 获取员工的最高学历记录
+ */
+public function getHighestEducation(): ?EmployeeEducation
+{
+    // 实现逻辑
+}
+```
+
+## 错误处理
+
+### 1. 异常处理
+```php
+try {
+    return Carbon::parse($value)->format('Y-m');
+} catch (\Exception $e) {
+    return null;
+}
+```
+
+### 2. 空值处理
+```php
+public function getContractFileUrlAttribute(): ?string
+{
+    return $this->contract_file ? StorageService::getUrlPath($this->contract_file) : null;
+}
+```
+
+## 性能优化建议
+
+### 1. 使用窗口函数优化查询
+```php
+public function scopeLatestPerEmployee(Builder $query): void
+{
+    $subQuery = static::query()
+        ->selectRaw('*, ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY measurement_at DESC) as row_num')
+        ->toBase();
+        
+    $query->fromSub($subQuery, 'ranked_records')
+        ->whereRaw('row_num = 1');
+}
+```
+
+### 2. 合理使用 Eager Loading
+```php
+// 在控制器中使用
+$employees = EmployeeProfile::with(['user', 'contracts', 'certificates'])->get();
+```
+
+## 安全规范
+
+### 1. 批量赋值保护
+- 明确定义 `$fillable` 属性
+- 避免使用 `$guarded = []`
+
+### 2. 类型安全
+- 使用 `declare(strict_types=1)`
+- 为方法参数和返回值添加类型声明
+
+这些规范基于项目中现有模型的最佳实践，确保代码的一致性、可维护性和性能。
