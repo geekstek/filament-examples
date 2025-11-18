@@ -1,0 +1,129 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Models; // 替换为实际的业务命名空间
+
+use Geekstek\XXX\Enums\XXXStatus; // 替换为实际的业务Enum命名空间
+use Geekstek\XXX\Policies\XXXPolicy; // 替换为实际的业务策略命名空间
+use Geekstek\Uacl\Traits\Companyable;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Spatie\QueryBuilder\AllowedFilter;
+
+#[UsePolicy(XXXPolicy::class)] // 替换为实际的业务策略命名空间
+class XXX extends Model
+{
+    use Companyable; // 多租户数据隔离
+    use HasFactory; // 工厂方法
+
+    protected $fillable = [
+        'company_id',
+        'category_id',
+        'name',
+        'slug',
+        'description',
+        'price',
+        'start_date',
+        'occurred_at',
+        'is_active',
+        'status',
+        'meta',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'start_date' => 'date:Y-m-d',
+            'occurred_at' => 'datetime:Y-m-d H:i:s',
+            'is_active' => 'boolean',
+            'status' => XXXStatus::class,
+            'meta' => 'array',
+        ];
+    }
+
+    // 判断是否需要加入关联方法
+
+    // 判断是否需要加入 Accessors and Mutators
+    
+    // 判断是否需要加入业务方法
+
+    // Spatie Query Builder 6 支持的字段
+    public static function getAllowedFields(bool $withTableName = false): array
+    {
+        $fields = [
+            'id',
+            'company_id',
+            'category_id',
+            'name',
+            'slug',
+            'description',
+            'price',
+            'start_date',
+            'occurred_at',
+            'is_active',
+            'status',
+            'meta',
+        ];
+
+        if ($withTableName) {
+            $tableName = (new static())->getTable();
+            $fields = array_map(fn ($field) => $tableName . '.' . $field, $fields);
+        } else {
+            $fields = array_merge(
+                $fields,
+                Category::getAllowedFields(true),
+            );
+        }
+
+        return $fields;
+    }
+
+    // Spatie Query Builder 6 支持的过滤器
+    public static function getAllowedFilters(): array
+    {
+        return [
+            AllowedFilter::exact('id'),
+            AllowedFilter::exact('company_id'),
+            AllowedFilter::exact('category_id'),
+            AllowedFilter::exact('name'),
+            AllowedFilter::partial('slug'),
+            AllowedFilter::partial('description'),
+            AllowedFilter::exact('price'),
+            AllowedFilter::partial('start_date'),
+            AllowedFilter::partial('occurred_at'),
+            AllowedFilter::exact('is_active'),
+            AllowedFilter::exact('status'),
+            AllowedFilter::partial('meta'),
+        ];
+    }
+
+    // Spatie Query Builder 6 支持的排序
+    public static function getAllowedSorts(): array
+    {
+        return [
+            'id',
+            'name',
+            'slug',
+            'description',
+            'price',
+            'start_date',
+            'occurred_at',
+            'is_active',
+            'status',
+            'created_at',
+            'updated_at',
+        ];
+    }
+
+    // Spatie Query Builder 6 支持的关联
+    public static function getAllowedIncludes(): array
+    {
+        return [
+            'category',
+        ];
+    }
+
+}

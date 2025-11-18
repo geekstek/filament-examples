@@ -1,0 +1,47 @@
+<?php
+
+// ./database/migrations/create_XXX_table.php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * 使用说明
+     * - 替换 `yyy_` 为实际的业务表前缀
+     * - 为每个字段添加明确的注释
+     * - 评估是否需要多租户字段 `company_id`
+     * - 根据实际需求添加索引、主键、唯一键等约束
+     * - 优先使用 `dateTime` 而非 `timestamp`
+     */
+    public function up(): void
+    {
+        // yyy_数据表对缀, 不同的业务需要有独立的数据表前缀, 避免 `categories` 这些常见的表名
+        Schema::create('yyy_products', function (Blueprint $table) {
+            $table->comment('数据表中文名'); // 简单描述数据表的名称
+            $table->id();
+            $table->unsignedBigInteger('company_id')->nullable()->index()->comment('公司ID'); // 评估数据表是否需要多租户数据分离, 需要就加入此字段
+            $table->foreignId('category_id')->constrained()->cascadeOnDelete()->comment('简单描述字段注释信息');
+            $table->string('name')->comment('简单描述字段注释信息');
+            $table->string('slug')->unique()->comment('简单描述字段注释信息');
+            $table->text('description')->nullable()->comment('简单描述字段注释信息');
+            $table->decimal('price', 8, 2)->comment('简单描述字段注释信息');
+            $table->date('start_date')->comment('简单描述字段注释信息');
+            $table->dateTime('occurred_at')->comment('简单描述字段注释信息'); // 如非必要, 尽量使用dateTime, 而非timestamp
+            $table->boolean('is_active')->default(true)->comment('简单描述字段注释信息');
+            $table->string('status')->default(XXXStatus::DEFAULT)->comment('简单描述字段注释信息');
+            $table->json('meta')->nullable()->comment('扩展信息'); // 如需要扩展信息, 加入此字段
+            $table->timestamps(); // 默认必要字段
+
+            // 请判断需要加入哪些 primary / 组合primary, 并加入简短的primary名, 以免primary名过长
+            // 请判断需要加入哪些 index / 组合index, 并加入简短的索引名, 以免索引名过长
+            // 请判断需要加入哪些 unique / 组合unique, 并加入简短的unique名, 以免unique名过长
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('yyy_products');
+    }
+};

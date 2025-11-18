@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Filament\Resources\YYY\Exports; // XXX替换为实际的业务命名空间, YYY替换为模型名(复数)
+
+use Filament\Actions\Exports\ExportColumn;
+use Geekstek\XXX\Models\YYY; // XXX替换为实际的业务命名空间, YYY替换为模型名
+use Geekstek\Support\Filament\Exports\BaseExporter;
+
+class YYYExporter extends BaseExporter // YYY替换为模型名(单数)
+{
+    protected static ?string $model = YYY::class; // YYY替换为模型名(单数)
+
+    public const TRANSLATIONS = 'XXX::resources/YYY.';
+
+    public static function getColumns(): array
+    {
+        return [
+            ExportColumn::make('id')
+                ->label(__(self::TRANSLATIONS . 'fields.id.label')),
+
+            ExportColumn::make('employee.user.name')
+                ->label(__(self::TRANSLATIONS . 'fields.employee_id.label')),
+
+            ExportColumn::make('employee.user.phone')
+                ->label(__(self::TRANSLATIONS . 'fields.employee_phone.label')),
+
+            ExportColumn::make('blood_pressure_status')
+                ->label(__(self::TRANSLATIONS . 'fields.blood_pressure_status.label'))
+                ->state(fn ($record) => $record->getBloodPressureStatus()),
+
+            // 模型 casts 定义了 Enums类时使用
+            ExportColumn::make('degree')
+                ->label(__(self::TRANSLATIONS . 'fields.degree.label'))
+                ->formatStateUsing(fn (EmployeeEducation $record): ?string => $record->degree?->getLabel()),
+
+            ExportColumn::make('start_date')
+                ->label(__(self::TRANSLATIONS . 'fields.start_date.label'))
+                ->formatStateUsing(fn (EmployeeEducation $record): ?string => self::parseDateSafely($record->start_date)),
+
+            ExportColumn::make('is_full_time')
+                ->label(__(self::TRANSLATIONS . 'fields.is_full_time.label'))
+                ->formatStateUsing(fn (EmployeeEducation $record): ?string => self::parseBooleanSafely($record->is_full_time)),
+
+            ExportColumn::make('remark')
+                ->label(__(self::TRANSLATIONS . 'fields.remark.label')),
+
+            ExportColumn::make('created_at')
+                ->label(__(self::TRANSLATIONS . 'fields.created_at.label')),
+
+            ExportColumn::make('updated_at')
+                ->label(__(self::TRANSLATIONS . 'fields.updated_at.label')),
+        ];
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->with(['employee', 'user']);
+    }
+
+    public static function getExportName(): string
+    {
+        return '员工健康检查记录';
+    }
+}

@@ -1,0 +1,821 @@
+---
+description: Filament 4 组件开发规范 - Pages, Widgets, Actions 等组件的最佳实践
+alwaysApply: false
+---
+# Filament 组件开发规范
+
+基于 模块包中的 Filament 组件分析，总结出 Pages、Widgets、Actions 等组件的开发最佳实践。
+
+## Pages 组件规范
+
+### 1. Dashboard 页面
+```php
+<?php
+
+namespace Geekstek\ModuleName\Filament\Pages;
+
+use Filament\Pages\Page;
+use Illuminate\Contracts\Support\Htmlable;
+
+class Dashboard extends Page
+{
+    public const TRANSLATIONS = 'module-name::pages/dashboard.';
+
+    protected static string | \BackedEnum | null $activeNavigationIcon = 'heroicon-s-home';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-home';
+    protected static ?int $navigationSort = 1;
+    protected static ?string $slug = 'dashboard-slug';
+    protected string $view = 'package::pages.dashboard';
+
+    public function getWidgets(): array
+    {
+        return [
+            Widget1::class,
+            Widget2::class,
+        ];
+    }
+
+    public function getVisibleWidgets(): array
+    {
+        return $this->filterVisibleWidgets($this->getWidgets());
+    }
+
+    public function getColumns(): int | string | array
+    {
+        return 1;
+    }
+
+    public function getTitle(): string | Htmlable
+    {
+        return __(self::TRANSLATIONS . 'labels.title');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __(self::TRANSLATIONS . 'labels.navigation_label');
+    }
+
+    public function getHeading(): string | Htmlable
+    {
+        return __(self::TRANSLATIONS . 'labels.heading');
+    }
+
+    public function getSubheading(): string | Htmlable | null
+    {
+        return __(self::TRANSLATIONS . 'labels.subheading');
+    }
+}
+```
+
+### 2. 自定义页面基础结构
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Pages;
+
+use Filament\Pages\Page;
+use Filament\Support\Enums\Width;
+
+class CustomPage extends Page
+{
+    public const TRANSLATIONS = 'administrative::pages/custom-page.';
+
+    protected static ?string $navigationIcon = 'heroicon-o-document-text';
+    protected static ?int $navigationSort = 10;
+    protected static ?string $slug = 'custom-page';
+    protected string $view = 'administrative::pages.custom-page';
+
+    // 页面宽度控制
+    protected Width | string | null $maxContentWidth = Width::SevenExtraLarge;
+
+    // 页面权限
+    public static function canAccess(): bool
+    {
+        return auth()->user()->can('view-custom-page');
+    }
+
+    // 页面数据
+    public function mount(): void
+    {
+        // 初始化数据
+    }
+
+    // 页面操作
+    protected function getHeaderActions(): array
+    {
+        return [
+            // 页面头部操作
+        ];
+    }
+
+    // 页面标题和标签
+    public static function getNavigationLabel(): string
+    {
+        return __(self::TRANSLATIONS . 'labels.navigation_label');
+    }
+
+    public function getTitle(): string | Htmlable
+    {
+        return __(self::TRANSLATIONS . 'labels.title');
+    }
+}
+```
+
+### 3. 通知设置页面模式
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Pages\ModuleName;
+
+use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Forms\Contracts\HasForms;
+use Filament\Pages\Page;
+use Geekstek\Administrative\Settings\ModuleNotificationSettings;
+
+class NotificationSettings extends Page implements HasForms
+{
+    use InteractsWithForms;
+
+    public const TRANSLATIONS = 'administrative::pages/module-notification-settings.';
+
+    protected static ?string $navigationIcon = 'heroicon-o-bell';
+    protected static ?int $navigationSort = 99;
+    protected static ?string $slug = 'module-notification-settings';
+    protected string $view = 'administrative::pages.notification-settings';
+
+    public ?array $data = [];
+
+    public function mount(): void
+    {
+        $this->form->fill(
+            app(ModuleNotificationSettings::class)->toArray()
+        );
+    }
+
+    public function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                // 通知设置表单
+            ])
+            ->statePath('data');
+    }
+
+    public function save(): void
+    {
+        $data = $this->form->getState();
+        
+        app(ModuleNotificationSettings::class)->fill($data);
+        app(ModuleNotificationSettings::class)->save();
+
+        Notification::make()
+            ->title('保存成功')
+            ->success()
+            ->send();
+    }
+
+    protected function getFormActions(): array
+    {
+        return [
+            Action::make('save')
+                ->label('保存设置')
+                ->submit('save'),
+        ];
+    }
+}
+```
+
+### 4. 数据概览页面
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Pages;
+
+use Filament\Pages\Page;
+use Illuminate\Contracts\Support\Htmlable;
+
+class DataOverview extends Page
+{
+    public const TRANSLATIONS = 'administrative::pages/data-overview.';
+
+    protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
+    protected static ?int $navigationSort = 5;
+    protected static ?string $slug = 'data-overview';
+    protected string $view = 'administrative::pages.data-overview';
+
+    // 页面数据属性
+    public array $stats = [];
+    public array $chartData = [];
+
+    public function mount(): void
+    {
+        $this->loadStats();
+        $this->loadChartData();
+    }
+
+    protected function loadStats(): void
+    {
+        // 加载统计数据
+        $this->stats = [
+            'total' => Model::count(),
+            'active' => Model::where('status', 'active')->count(),
+            // 其他统计数据
+        ];
+    }
+
+    protected function loadChartData(): void
+    {
+        // 加载图表数据
+        $this->chartData = [
+            'labels' => [],
+            'datasets' => [],
+        ];
+    }
+
+    // 页面操作
+    public function refresh(): void
+    {
+        $this->loadStats();
+        $this->loadChartData();
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('refresh')
+                ->label('刷新数据')
+                ->icon('heroicon-o-arrow-path')
+                ->action('refresh'),
+        ];
+    }
+}
+```
+
+## Widgets 组件规范
+
+### 1. Stats Overview Widget
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Widgets;
+
+use Filament\Facades\Filament;
+use Filament\Widgets\StatsOverviewWidget;
+use Filament\Widgets\StatsOverviewWidget\Stat;
+
+class ModelStatsOverviewWidget extends StatsOverviewWidget
+{
+    public const TRANSLATIONS = 'administrative::widgets/model-stats-overview.';
+
+    protected ?string $pollingInterval = null;
+
+    protected function getStats(): array
+    {
+        return [
+            Stat::make(
+                __(self::TRANSLATIONS . 'stats.total_records'), 
+                Model::where('company_id', Filament::getTenant()->id)->count()
+            )
+                ->icon('heroicon-o-users')
+                ->description(__(self::TRANSLATIONS . 'descriptions.total_records'))
+                ->descriptionIcon('heroicon-o-information-circle', 'before')
+                ->color('primary'),
+
+            Stat::make(
+                __(self::TRANSLATIONS . 'stats.active_records'),
+                Model::where('company_id', Filament::getTenant()->id)
+                    ->where('status', 'active')
+                    ->count()
+            )
+                ->icon('heroicon-o-check-circle')
+                ->description(__(self::TRANSLATIONS . 'descriptions.active_records'))
+                ->descriptionIcon('heroicon-o-check-circle', 'before')
+                ->color('success'),
+
+            Stat::make(
+                __(self::TRANSLATIONS . 'stats.pending_records'),
+                Model::where('company_id', Filament::getTenant()->id)
+                    ->where('status', 'pending')
+                    ->count()
+            )
+                ->icon('heroicon-o-clock')
+                ->description(__(self::TRANSLATIONS . 'descriptions.pending_records'))
+                ->descriptionIcon('heroicon-o-clock', 'before')
+                ->color('warning'),
+        ];
+    }
+}
+```
+
+### 2. Chart Widget
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\Administrative\Filament\Widgets;
+
+use Filament\Facades\Filament;
+use Filament\Widgets\ChartWidget;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\DB;
+
+class DataDistributionChart extends ChartWidget
+{
+    public const TRANSLATIONS = 'administrative::widgets/data-distribution.';
+
+    protected string $color = 'primary';
+    protected static ?string $icon = 'heroicon-o-chart-pie';
+    protected static ?string $iconColor = 'primary';
+    protected static ?string $iconBackgroundColor = 'primary';
+    protected ?string $maxHeight = '350px';
+
+    protected function getData(): array
+    {
+        $distribution = Model::select('category', DB::raw('count(*) as total'))
+            ->where('company_id', Filament::getTenant()->id)
+            ->groupBy('category')
+            ->get();
+
+        return [
+            'datasets' => [
+                [
+                    'label' => __(self::TRANSLATIONS . 'dataset_label'),
+                    'data' => $distribution->pluck('total')->toArray(),
+                    'backgroundColor' => [
+                        '#3B82F6', // primary
+                        '#10B981', // success
+                        '#F59E0B', // warning
+                        '#EF4444', // danger
+                        '#8B5CF6', // purple
+                    ],
+                ],
+            ],
+            'labels' => $distribution->pluck('category')->toArray(),
+        ];
+    }
+
+    protected function getType(): string
+    {
+        return 'pie'; // 或 'bar', 'line', 'doughnut' 等
+    }
+
+    public function getHeading(): string | Htmlable | null
+    {
+        return __(self::TRANSLATIONS . 'heading');
+    }
+
+    public function getDescription(): string | Htmlable | null
+    {
+        return __(self::TRANSLATIONS . 'description');
+    }
+}
+```
+
+### 3. Calendar Widget
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Widgets;
+
+use Filament\Widgets\Widget;
+use Illuminate\Contracts\Support\Htmlable;
+
+class CalendarWidget extends Widget
+{
+    public const TRANSLATIONS = 'administrative::widgets/calendar.';
+
+    protected static ?string $icon = 'heroicon-o-calendar';
+    protected static ?string $iconColor = 'primary';
+    protected int | string | array $columnSpan = 'full';
+    protected ?string $maxHeight = '600px';
+
+    protected string $view = 'administrative::widgets.calendar';
+
+    // 日历数据
+    public array $events = [];
+
+    public function mount(): void
+    {
+        $this->loadEvents();
+    }
+
+    protected function loadEvents(): void
+    {
+        // 加载日历事件数据
+        $this->events = [
+            // 事件数据结构
+        ];
+    }
+
+    public function getHeading(): string | Htmlable | null
+    {
+        return __(self::TRANSLATIONS . 'heading');
+    }
+
+    // 获取视图数据
+    protected function getViewData(): array
+    {
+        return [
+            'events' => $this->events,
+        ];
+    }
+}
+```
+
+## Actions 组件规范
+
+### 1. 自定义 Table Action
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Resources\ModelName\Actions;
+
+use Filament\Tables\Actions\Action;
+use Filament\Forms\Components\Select;
+use Filament\Support\Enums\Color;
+
+class CustomTableAction
+{
+    public static function make(): Action
+    {
+        return Action::make('customAction')
+            ->label('自定义操作')
+            ->icon('heroicon-o-cog')
+            ->color(Color::Primary)
+            ->form([
+                Select::make('option')
+                    ->label('选择选项')
+                    ->options([
+                        'option1' => '选项1',
+                        'option2' => '选项2',
+                    ])
+                    ->required(),
+            ])
+            ->action(function (array $data, Model $record): void {
+                // 执行操作逻辑
+                $record->update([
+                    'field' => $data['option'],
+                ]);
+
+                Notification::make()
+                    ->title('操作成功')
+                    ->success()
+                    ->send();
+            })
+            ->requiresConfirmation()
+            ->modalHeading('确认操作')
+            ->modalDescription('这将执行自定义操作，是否继续？')
+            ->modalSubmitActionLabel('确认')
+            ->modalCancelActionLabel('取消');
+    }
+}
+```
+
+### 2. 批量操作
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Resources\ModelName\Actions;
+
+use Filament\Tables\Actions\BulkAction;
+use Filament\Forms\Components\Select;
+use Illuminate\Database\Eloquent\Collection;
+
+class CustomBulkAction
+{
+    public static function make(): BulkAction
+    {
+        return BulkAction::make('customBulkAction')
+            ->label('批量自定义操作')
+            ->icon('heroicon-o-cog')
+            ->color('warning')
+            ->form([
+                Select::make('status')
+                    ->label('新状态')
+                    ->options([
+                        'active' => '激活',
+                        'inactive' => '停用',
+                    ])
+                    ->required(),
+            ])
+            ->action(function (Collection $records, array $data): void {
+                foreach ($records as $record) {
+                    $record->update(['status' => $data['status']]);
+                }
+
+                Notification::make()
+                    ->title('批量操作完成')
+                    ->body(sprintf('已更新 %d 条记录', $records->count()))
+                    ->success()
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion()
+            ->requiresConfirmation();
+    }
+}
+```
+
+### 3. 页面头部操作
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Resources\ModelName\Actions;
+
+use Filament\Actions\Action;
+use Filament\Support\Enums\Color;
+
+class PageHeaderAction
+{
+    public static function make(): Action
+    {
+        return Action::make('pageAction')
+            ->label('页面操作')
+            ->icon('heroicon-o-plus')
+            ->color(Color::Primary)
+            ->url(route('custom.route'))
+            ->openUrlInNewTab()
+            ->button()
+            ->outlined();
+    }
+
+    public static function makeModal(): Action
+    {
+        return Action::make('modalAction')
+            ->label('模态框操作')
+            ->icon('heroicon-o-cog')
+            ->color(Color::Success)
+            ->form([
+                // 表单组件
+            ])
+            ->action(function (array $data): void {
+                // 操作逻辑
+            })
+            ->modal()
+            ->modalHeading('操作标题')
+            ->modalSubmitActionLabel('执行')
+            ->modalCancelActionLabel('取消');
+    }
+}
+```
+
+## 表单组件规范
+
+### 1. 自定义表单组件
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Resources\ModelName\Schemas\Components;
+
+use Filament\Forms\Components\Component;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+
+class CustomFormComponent
+{
+    public static function make(): Component
+    {
+        return TextInput::make('custom_field')
+            ->label('自定义字段')
+            ->reactive()
+            ->debounce(1000)
+            ->afterStateUpdated(function (?string $state, Set $set, Get $get) {
+                // 处理状态更新
+                if ($state) {
+                    // 执行逻辑
+                    $set('dependent_field', $processedValue);
+                }
+            })
+            ->hint('字段提示信息')
+            ->hintIcon('heroicon-o-information-circle')
+            ->helperText('帮助文本');
+    }
+
+    public static function makeConditional(): Component
+    {
+        return TextInput::make('conditional_field')
+            ->label('条件字段')
+            ->visible(fn (Get $get) => $get('trigger_field') === 'expected_value')
+            ->required(fn (Get $get) => $get('trigger_field') === 'expected_value')
+            ->disabled(fn (Get $get) => $get('trigger_field') === 'disabled_value');
+    }
+}
+```
+
+### 2. 复杂表单验证
+```php
+<?php
+
+namespace Geekstek\Administrative\Filament\Resources\ModelName\Schemas\Components;
+
+use Filament\Forms\Components\TextInput;
+use Closure;
+
+class ValidatedComponent
+{
+    public static function make(): TextInput
+    {
+        return TextInput::make('validated_field')
+            ->label('验证字段')
+            ->rules([
+                'required',
+                'string',
+                'max:255',
+                function (?Model $record) {
+                    return function (string $attribute, $value, Closure $fail) use ($record) {
+                        // 自定义验证逻辑
+                        if (!$this->customValidation($value, $record)) {
+                            $fail('自定义验证失败消息');
+                        }
+                    };
+                },
+            ])
+            ->validationMessages([
+                'required' => '此字段为必填项',
+                'max' => '字段长度不能超过 255 个字符',
+            ]);
+    }
+
+    private function customValidation($value, ?Model $record): bool
+    {
+        // 实现自定义验证逻辑
+        return true;
+    }
+}
+```
+
+## 样式和布局规范
+
+### 1. 响应式布局
+```php
+// 在 Schema 中使用响应式列
+Section::make('响应式分组')
+    ->schema([
+        // 组件
+    ])
+    ->columns([
+        'sm' => 1,
+        'md' => 2,
+        'lg' => 3,
+        'xl' => 4,
+    ]),
+
+// 组件跨列
+TextInput::make('field')
+    ->columnSpan([
+        'sm' => 2,
+        'md' => 1,
+    ]),
+
+// 全宽组件
+Textarea::make('description')
+    ->columnSpanFull(),
+```
+
+### 2. 组件样式定制
+```php
+// 使用颜色主题
+Select::make('status')
+    ->options(StatusEnum::class)
+    ->badge()
+    ->color(fn ($state) => match($state) {
+        'active' => 'success',
+        'inactive' => 'danger',
+        default => 'gray',
+    }),
+
+// 图标配置
+Section::make('带图标的分组')
+    ->icon('heroicon-o-user')
+    ->iconColor('primary')
+    ->description('分组描述'),
+```
+
+### 3. 条件样式
+```php
+TextColumn::make('status')
+    ->badge()
+    ->color(fn ($state) => $state->getColor())
+    ->icon(fn ($state) => $state->getIcon()),
+
+TextColumn::make('amount')
+    ->money('CNY')
+    ->color(fn ($state) => $state > 0 ? 'success' : 'danger'),
+```
+
+## 性能优化规范
+
+### 1. Widget 缓存
+```php
+class CachedWidget extends StatsOverviewWidget
+{
+    protected ?string $pollingInterval = '30s';
+
+    protected function getStats(): array
+    {
+        return Cache::remember(
+            'widget-stats-' . Filament::getTenant()->id,
+            now()->addMinutes(5),
+            function () {
+                return [
+                    // 统计数据计算
+                ];
+            }
+        );
+    }
+}
+```
+
+### 2. 延迟加载
+```php
+class LazyWidget extends Widget
+{
+    protected bool $readyToLoad = false;
+
+    public function loadData()
+    {
+        $this->readyToLoad = true;
+    }
+
+    public function render()
+    {
+        if (!$this->readyToLoad) {
+            return view('components.skeleton');
+        }
+
+        return parent::render();
+    }
+}
+```
+
+## 错误处理规范
+
+### 1. 操作错误处理
+```php
+Action::make('risky_action')
+    ->action(function (Model $record): void {
+        try {
+            // 执行可能失败的操作
+            $this->performRiskyOperation($record);
+
+            Notification::make()
+                ->title('操作成功')
+                ->success()
+                ->send();
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('操作失败')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            logger()->error('操作失败', [
+                'record_id' => $record->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }),
+```
+
+### 2. 表单错误处理
+```php
+protected function mutateFormDataBeforeCreate(array $data): array
+{
+    try {
+        // 数据处理逻辑
+        return $this->processData($data);
+    } catch (\Exception $e) {
+        throw new Halt($e->getMessage());
+    }
+}
+```
+
+## 测试规范
+
+### 1. Widget 测试
+```php
+it('displays correct stats', function () {
+    $widget = new ModelStatsOverviewWidget();
+    
+    $stats = $widget->getStats();
+    
+    expect($stats)->toHaveCount(3);
+    expect($stats[0]->getValue())->toBeNumeric();
+});
+```
+
+### 2. Action 测试
+```php
+it('performs custom action correctly', function () {
+    $record = Model::factory()->create();
+    
+    $action = CustomTableAction::make();
+    
+    $action->call(['option' => 'option1'], $record);
+    
+    expect($record->fresh()->field)->toBe('option1');
+});
+```
+
+遵循以上规范可以确保 Filament 组件的一致性、性能和可维护性。

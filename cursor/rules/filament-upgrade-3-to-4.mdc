@@ -1,0 +1,127 @@
+---
+globs: src/Filament/*.php
+alwaysApply: false
+---
+Filament v3 到 v4 升級指南
+
+### **核心變更：設定檔與服務提供者**
+
+在深入研究類別和方法之前，最重要的變更是套件的設定檔和服務提供者。
+
+*   **設定檔合併:**
+    *   在 v4 中，多個 v3 的設定檔被合併為一個核心設定檔。
+    *   `forms.php`, `notifications.php`, `tables.php` 等設定檔的內容現在都已移至 `filament.php` 中。
+*   **服務提供者簡化:**
+    *   v3 中的 `FilamentServiceProvider` 在 v4 中已被移除。
+    *   您需要將原本在 `FilamentServiceProvider` 的 `register()` 或 `boot()` 方法中的邏輯，移至專案的 `app/Providers/AppServiceProvider.php` 或其他適合的服務提供者中。
+
+---
+
+### **全域性的類別與命名空間變更**
+
+以下是 Rector 規則中定義的最常見的類別和命名空間的重新命名。
+
+#### **1. Forms 組件**
+
+| v3 (舊) | v4 (新) |
+| :--- | :--- |
+| `Filament\Forms\Components\Builder\Block` | `Filament\Forms\Components\Block` |
+| `Filament\Forms\Components\Checkbox` | `Filament\Forms\Components\Checkbox` (用法不變，但內部邏輯更新) |
+| `Filament\Forms\Components\Radio` | `Filament\Forms\Components\Radio` (用法不變，但內部邏輯更新) |
+| `Filament\Forms\Components\Card` | `Filament\Forms\Components\Section` |
+| `Filament\Forms\Components\Tabs\Tab` | `Filament\Forms\Components\Tab` |
+
+#### **2. Tables 組件**
+
+| v3 (舊) | v4 (新) |
+| :--- | :--- |
+| `Filament\Tables\Columns\BooleanColumn` | `Filament\Tables\Columns\IconColumn` |
+| `Filament\Tables\Columns\CheckboxColumn` | `Filament\Tables\Columns\CheckboxColumn` (用法不變，但內部邏輯更新) |
+| `Filament\Tables\Filters\Filter` | `Filament\Tables\Filters\Filter` (用法不變，但內部邏輯更新) |
+| `Filament\Tables\Actions\Position` | `Filament\Support\Actions\ActionGroup` |
+
+#### **3. Support / Support L庫**
+
+大量的輔助類別和工具類已從 `Filament\Support` 命名空間移動到 `Filament\Support\Facades` 或其他更具體的位置。
+
+| v3 (舊) | v4 (新) |
+| :--- | :--- |
+| `Filament\Support\Actions\Concerns\CanBeDisabled` | `Filament\Support\Concerns\CanBeDisabled` |
+| `Filament\Support\Enums\Alignment` | `Filament\Support\Enums\Alignment` |
+| `Filament\Support\Enums\IconPosition` | `Filament\Support\Enums\IconPosition` |
+| `Filament\Support\Enums\IconSize` | `Filament\Support\Enums\IconSize` |
+
+#### **4. 其他核心類別**
+
+| v3 (舊) | v4 (新) |
+| :--- | :--- |
+| `Filament\Http\Livewire\Auth\Login` | `Filament\Pages\Auth\Login` |
+| `Filament\Http\Responses\Auth\LoginResponse` | `Filament\Http\Responses\Auth\LoginResponse` |
+| `Filament\Models\Contracts\HasAvatar` | `Filament\Models\Contracts\HasAvatar` |
+| `Filament\Notifications\Actions\Action` | `Filament\Notifications\Actions\Action` |
+| `Filament\Notifications\Notification` | `Filament\Notifications\Notification` |
+
+---
+
+### **方法與屬性的用法變更**
+
+Rector 規則不僅處理了類別的重新命名，還處理了許多方法和屬性的變更。
+
+#### **1. 方法重新命名**
+
+| 組件/類別 | v3 方法 (舊) | v4 方法 (新) | 說明 |
+| :--- | :--- | :--- | :--- |
+| `HasActions` Trait | `getCachedActions()` | `getMountedActions()` | 用於獲取已掛載的動作。 |
+| `HasForms` Trait | `getCachedForms()` | `getMountedForms()` | 用於獲取已掛載的表單。 |
+| `Table` | `getRecordClasses()` | `getRowClasses()` | 更改了方法名以更清晰地表達其功能。 |
+| `Table` | `getRecordUrl()` | `getRowUrl()` | 同上。 |
+| `Table` | `getRecordAction()` | `getRowAction()` | 同上。 |
+| `Table` | `getRecordTarget()` | `getRowTarget()` | 同上。 |
+| `HasState` Trait | `shouldCallHooks()` | `isStateBeingUpdated()` | |
+| `TextInput` | `getAutocomplete()` | `getAutocomplete()` | |
+| `TextInput` | `getAutofocus()` | `isAutofocused()` | |
+| `TextInput` | `isDisabled()` | `isDisabled()` | |
+| `TextInput` | `isRequired()` | `isRequired()` | |
+| `TextInput` | `isLabelHidden()` | `isLabelHidden()` | |
+| `Checkbox` | `isInline()` | `isInline()` | |
+
+#### **2. 屬性訪問變更 (魔術屬性 -> 方法)**
+
+在 v3 中，許多配置是通過公共屬性設定的。在 v4 中，這些屬性大多變成了受保護或私有的，並通過 getter/setter 方法來訪問。Rector 規則會將直接的屬性賦值轉換為方法調用。
+
+**範例：**
+*   v3 寫法： `$action->disabled = true;`
+*   v4 寫法： `$action->disabled();`
+
+*   v3 寫法： `$column->sortable = true;`
+*   v4 寫法： `$column->sortable();`
+
+*   v3 寫法： `$field->required = true;`
+*   v4 寫法： `$field->required();`
+
+#### **3. 方法鏈式呼叫的變更**
+
+*   **`BooleanColumn` 到 `IconColumn` 的轉換:**
+    *   v3 的 `BooleanColumn` 會自動顯示勾或叉的圖標。
+    *   v4 中，這個功能由 `IconColumn` 取代。
+    *   Rector 規則會將 `BooleanColumn::make('is_active')` 轉換為 `IconColumn::make('is_active')->boolean()`。
+
+*   **`Card` 到 `Section` 的轉換:**
+    *   v3 的 `Card` 元件在 v4 中被功能更強大的 `Section` 元件取代。
+    *   Rector 規則會自動將 `Card::make()` 替換為 `Section::make()`。
+
+*   **`Tabs` 組件的 `isLazy` 方法:**
+    *   在 v3 中，使用 `->isLazy()` 來啟用延遲載入。
+    *   在 v4 中，此方法改為 `->lazy()`。
+
+---
+
+### **結論**
+
+這份文件涵蓋了 `filament/upgrade` 套件中 Rector 規則所執行的大部分關鍵變更。雖然 Rector 能自動化處理許多升級任務，但仍有以下幾點需要注意：
+
+1.  **邏輯變更:** Rector 主要處理語法和結構的變更，但無法完全理解並重構您的業務邏輯。例如 `deferFilters()` 的行為改變需要您手動審查。
+2.  **設定檔:** 您需要手動合併舊的設定檔到新的 `filament.php` 中。
+3.  **服務提供者:** 您需要手動將 `FilamentServiceProvider` 的邏輯遷移。
+
+建議將此文件作為手動升級或審查自動升級腳本結果的參考。在進行任何變更前，請務必確保您的專案處於版本控制之下。

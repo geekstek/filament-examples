@@ -1,0 +1,258 @@
+---
+description: Filament 4 Export 导出类开发规范与最佳实践
+globs: 
+  - "src/Filament/Resources/**/Exports/*.php"
+alwaysApply: false
+---
+
+## Filament 导出类开发规范
+
+本规则定义了在 Administrative 包中开发 Filament 导出类的标准规范和最佳实践，确保一致性、可维护性与性能。
+
+**注意**: 请参考 @.cursor/templates/filament-resource-export.php.stub 示例文件
+**注意**: 请使用 query 工具查看数据表设计
+
+### 一、基础结构规范
+
+- **类命名**：以 `Exporter` 结尾，使用 PascalCase，与模型或资源语义一致。
+- **继承基类**：统一继承 `Geekstek\Support\Filament\Exports\BaseExporter`。
+- **命名空间**：放置于对应资源的 `Exports` 子目录下：
+
+```text
+src/Filament/Resources/
+├── ExampleResource/
+│   ├── Exports/
+│   │   └── ExampleExporter.php
+│   └── Pages/
+└── AnotherResource/
+    ├── Exports/
+    │   └── AnotherExporter.php
+    └── Pages/
+```
+
+### 二、必需常量与属性
+
+每个导出类必须定义以下内容：
+
+```php
+<?php
+
+use Filament\Actions\Exports\ExportColumn;
+use Geekstek\Support\Filament\Exports\BaseExporter;
+use Illuminate\Database\Eloquent\Builder;
+
+class ExampleExporter extends BaseExporter
+{
+    public const TRANSLATIONS = 'administrative::resources/example.'; // 资源翻译前缀
+
+    protected static ?string $model = Example::class; // 绑定模型
+}
+```
+
+说明：
+- `TRANSLATIONS` 用于统一列头与导出名称的翻译键前缀，遵循 `resources/lang/**/resources/<resource>.*`。
+- `$model` 指向导出对应的 Eloquent 模型。
+
+### 三、核心方法实现
+
+#### 1. getColumns(): array
+
+定义导出列，返回 `ExportColumn` 数组：
+
+```php
+public static function getColumns(): array
+{
+    return [
+        ExportColumn::make('user.name')
+            ->label(__(self::TRANSLATIONS . 'fields.employee_id.label')),
+
+        ExportColumn::make('status')
+            ->label(__(self::TRANSLATIONS . 'fields.status.label'))
+            ->formatStateUsing(fn (Example $record): ?string => $record->status?->getLabel()),
+
+        ExportColumn::make('start_date')
+            ->label(__(self::TRANSLATIONS . 'fields.start_date.label'))
+            ->formatStateUsing(fn (Example $record): ?string => self::parseDateSafely($record->start_date)),
+
+        ExportColumn::make('is_active')
+            ->label(__(self::TRANSLATIONS . 'fields.is_active.label'))
+            ->formatStateUsing(fn (Example $record): ?string => self::parseBooleanSafely($record->is_active)),
+    ];
+}
+```
+
+最佳实践：
+- 使用 `->label(__(...))` 统一多语言列头。
+- 日期统一使用 `self::parseDateSafely(...)`，布尔值统一使用 `self::parseBooleanSafely(...)`。
+- 枚举显示文本统一通过 `$record->enum?->getLabel()`，注意空安全操作符。
+
+#### 2. modifyQuery(Builder $query): Builder
+
+用于预加载关系，避免 N+1 查询：
+
+```php
+public static function modifyQuery(Builder $query): Builder
+{
+    return $query->with(['user', 'relatedType']);
+}
+```
+
+规范：
+- 只要列中使用了关系字段（例如 `user.name`、`parent.name`、`xxxType.name`），必须在此处 `with([...])`。
+- 仅预加载实际用到的关系，避免过度预加载。
+
+#### 3. getExportName(): string
+
+统一导出任务名使用资源导航翻译：
+
+```php
+protected static function getExportName(): string
+{
+    return __(self::TRANSLATIONS . 'labels.navigation_label');
+}
+```
+
+### 四、列定义最佳实践
+
+#### 1. 关系字段
+
+- 直接使用点语法：`ExportColumn::make('user.phone')`。
+- 搭配 `modifyQuery()` 进行 `with('user')` 预加载。
+
+#### 2. 枚举字段
+
+```php
+ExportColumn::make('status')
+    ->label(__(self::TRANSLATIONS . 'fields.status.label'))
+    ->formatStateUsing(fn (Example $record): ?string => $record->status?->getLabel());
+```
+
+#### 3. 布尔字段
+
+```php
+ExportColumn::make('is_full_time')
+    ->label(__(self::TRANSLATIONS . 'fields.is_full_time.label'))
+    ->formatStateUsing(fn (Example $record): ?string => self::parseBooleanSafely($record->is_full_time));
+```
+
+#### 4. 日期时间字段
+
+```php
+ExportColumn::make('effective_date')
+    ->label(__(self::TRANSLATIONS . 'fields.effective_date.label'))
+    ->formatStateUsing(fn (Example $record): ?string => self::parseDateSafely($record->effective_date));
+```
+
+#### 5. 计算/聚合字段
+
+当需要从多条关系记录拼装字符串时，使用 `->state()` 明确返回字符串：
+
+```php
+ExportColumn::make('organizationUsers')
+    ->label(__(self::TRANSLATIONS . 'fields.organization-users.label'))
+    ->state(function (Example $record): ?string {
+        $segments = [];
+        foreach ($record->organizationUsers as $row) {
+            if ($row->organization && $row->position) {
+                $segments[] = $row->position->name . ' (' . ($row->organization->name ?? '') . ')';
+            }
+        }
+        return implode(', ', $segments);
+    });
+```
+
+规范：
+- 复杂列尽量在闭包中完成字符串拼装，不在导出层写业务逻辑。
+- 闭包中禁止触发额外查询（务必依赖 `modifyQuery()` 预加载）。
+
+#### 6. 隐私与安全
+
+- 避免导出敏感字段（如隐私证件号的完整值）。如必须导出，建议部分脱敏处理。
+- 不要在导出闭包中拼接或暴露系统内部标识符。
+
+### 五、性能与可维护性
+
+- 必要的 `with()` 预加载，严格控制关系深度，避免链式深层预加载。
+- 列的数量应与实际业务需求匹配，避免导出无用列。
+- 不在 `getColumns()` 里做复杂计算或查询。
+
+### 六、翻译与多语言
+
+- 统一使用 `self::TRANSLATIONS` 前缀的翻译键：`fields.*.label`、`labels.navigation_label`。
+- 新增列时，同步更新对应语言文件下的翻译项。
+
+### 七、代码风格
+
+- 遵循 PSR-12；使用严格类型声明 `declare(strict_types=1);`（新文件推荐）。
+- `use` 导入按标准顺序分组；为闭包参数与返回值添加尽量明确的类型提示。
+
+### 八、常见错误与检查清单
+
+- [ ] 忘记设置 `$model` 或 `TRANSLATIONS`。
+- [ ] 使用关系列但未在 `modifyQuery()` 预加载。
+- [ ] 日期/布尔/枚举未使用统一格式化方法。
+- [ ] 列头未使用翻译 `->label(__(...))`。
+- [ ] 闭包中触发 N+1 查询或包含业务写操作。
+
+### 九、测试建议（Pest）
+
+建议为每个导出类编写基础测试：
+
+1. 生成导出数据时的列头是否与翻译一致。
+2. 含关系字段的导出是否仅产生有限查询（验证预加载生效，可通过查询计数或假设）。
+3. 日期/布尔/枚举列格式化是否符合预期。
+4. 计算/聚合列在典型与边界数据下输出是否正确。
+
+### 十、标准示例
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\Administrative\Filament\Resources\Examples\Exports;
+
+use Filament\Actions\Exports\ExportColumn;
+use Geekstek\Administrative\Models\Example;
+use Geekstek\Support\Filament\Exports\BaseExporter;
+use Illuminate\Database\Eloquent\Builder;
+
+class ExampleExporter extends BaseExporter
+{
+    public const TRANSLATIONS = 'administrative::resources/example.';
+
+    protected static ?string $model = Example::class;
+
+    public static function getColumns(): array
+    {
+        return [
+            ExportColumn::make('user.name')
+                ->label(__(self::TRANSLATIONS . 'fields.employee_id.label')),
+
+            ExportColumn::make('status')
+                ->label(__(self::TRANSLATIONS . 'fields.status.label'))
+                ->formatStateUsing(fn (Example $record): ?string => $record->status?->getLabel()),
+
+            ExportColumn::make('start_date')
+                ->label(__(self::TRANSLATIONS . 'fields.start_date.label'))
+                ->formatStateUsing(fn (Example $record): ?string => self::parseDateSafely($record->start_date)),
+
+            ExportColumn::make('remark')
+                ->label(__(self::TRANSLATIONS . 'fields.remark.label')),
+        ];
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->with(['user']);
+    }
+
+    protected static function getExportName(): string
+    {
+        return __(self::TRANSLATIONS . 'labels.navigation_label');
+    }
+}
+```
+
+遵循以上规范可确保导出类在不同资源间保持一致的设计与表现，并减少维护成本。
+

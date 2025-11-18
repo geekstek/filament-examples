@@ -1,0 +1,55 @@
+---
+description: Filament 4 Resources Form 开发规范
+globs:
+  - "src/Filament/Resources/**/Schemas/*Form.php"
+alwaysApply: true
+---
+
+## 一、布局架构原则
+
+### 1.1 布局优先级
+
+使用顺序：基础字段 → Section → Tabs → Wizard
+
+```
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Wizard;
+```
+
+适用场景：
+
+- 字段数 < 8：直接平铺
+- 字段数 8-15：使用 2-3 个 Section
+- 字段数 >15：使用 Tabs 分组
+
+### 1.2 Section 最佳实践
+
+参考示例文件 @.cursor/templates/filament-resource-form.php.stub
+
+## 二、视觉优化规范
+
+### 2.1 图标使用规则
+
+图标选择原则：
+use 
+
+- 表单操作：Heroicon::XXX 系列（实心）
+- 信息展示：Heroicon::OutlinedXXX 系列（线框）
+
+禁用方案：
+
+- ❌ 同一 Section 混合使用不同系列图标
+- ✅ 全站保持统一图标风格
+
+## 三、命名与翻译规范
+
+### 3.1 Section 命名规范
+
+每个 Section 需添加翻译标识：
+
+```php
+Section::make(__(self::TRANSLATIONS . 'sections.<section名>.label'))
+    ->heading(__(self::TRANSLATIONS . 'sections.<section名>.heading'))
+    ->description(__(self::TRANSLATIONS . 'sections.<section名>.description'))
+```

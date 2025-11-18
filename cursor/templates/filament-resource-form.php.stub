@@ -1,0 +1,142 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Filament\Resources\YYY\Schemas; // XXX替换为实际的业务命名空间, YYY替换为模型名(复数)
+
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Schema;
+use Geekstek\Community\Models\Asset;
+use Geekstek\Community\Models\Community;
+use Geekstek\PropAcc\Enums\AssetRateCycle;
+use Geekstek\PropAcc\Models\FeeType;
+use Geekstek\PropAcc\Models\RatePlan;
+
+class YYYForm
+{
+    public const TRANSLATIONS = 'XXX::resources/YYY.';
+    
+    public static function configure(Schema $schema): Schema
+    {
+        return $schema
+            ->components([
+                Section::make('基本信息')
+                    ->schema([
+                        Select::make('community_id')
+                            ->label('社区')
+                            ->options(Community::query()->pluck('name', 'id'))
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                $set('asset_id', null);
+                                $set('fee_type_id', null);
+                                $set('rate_plan_id', null);
+                            }),
+
+                        Select::make('asset_id')
+                            ->label('资产')
+                            ->options(fn (Get $get) => Asset::query()
+                                ->when($get('community_id'), fn ($q, $v) => $q->where('community_id', $v))
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                            )
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->getOptionLabelFromRecordUsing(fn ($record) => $record->name . ' (' . ($record->full_address ?? '') . ')'
+                            ),
+
+                        Select::make('fee_type_id')
+                            ->label('费用类型')
+                            ->options(FeeType::query()->pluck('name', 'id'))
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(fn ($state, callable $set) => $set('rate_plan_id', null)),
+
+                        Select::make('rate_plan_id')
+                            ->label('费率方案')
+                            ->options(fn (Get $get) => RatePlan::query()
+                                ->when($get('community_id'), fn ($q, $v) => $q->where('community_id', $v))
+                                ->when($get('fee_type_id'), fn ($q, $v) => $q->where('fee_type_id', $v))
+                                ->where('is_active', true)
+                                ->pluck('name', 'id')
+                            )
+                            ->required()
+                            ->searchable()
+                            ->preload(),
+                    ])
+                    ->columns(2),
+
+                Section::make('收费设置')
+                    ->schema([
+                        Grid::make(3)
+                            ->schema([
+                                Select::make('billing_cycle')
+                                    ->label('收费周期')
+                                    ->options(AssetRateCycle::class)
+                                    ->required()
+                                    ->default(AssetRateCycle::QUARTERLY)
+                                    ->native(false),
+
+                                TextInput::make('billing_day')
+                                    ->label('每期出账日')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->maxValue(28)
+                                    ->default(1)
+                                    ->required()
+                                    ->suffix('号'),
+
+                                TextInput::make('quantity_locked')
+                                    ->label('锁定数量/面积')
+                                    ->numeric()
+                                    ->step(0.01)
+                                    ->helperText('留空将使用资产的计费面积'),
+                            ]),
+                    ]),
+
+                Section::make('有效期设置')
+                    ->schema([
+                        Grid::make(2)
+                            ->schema([
+                                DatePicker::make('effective_from')
+                                    ->label('生效日期')
+                                    ->required()
+                                    ->default(now())
+                                    ->native(false)
+                                    ->displayFormat('Y-m-d H:i:s'),
+                                DateTimePicker::make('scheduled_at')
+                                    ->label(__(self::TRANSLATIONS . 'fields.scheduled_at.label'))
+                                    ->native(false) // 使用自定义日期时间选择器
+                                    ->displayFormat('Y-m-d H:i') // 显示格式
+                                    ->seconds(false) // 不显示秒
+                            ]),
+
+                        FileUpload::make('avatar')
+                            ->label(__(self::TRANSLATIONS . 'fields.avatar.label'))
+                            ->directory('avatars') // 指定存储目录
+                            ->panelLayout('grid') // 网格预览布局
+                            ->previewable() // 支持预览
+                            ->downloadable() // 支持下载
+                            ->image() // 指定为图片类型
+                            ->imageEditor() // 支持图片编辑
+                        Toggle::make('is_active')
+                            ->label('启用')
+                            ->default(true)
+                            ->inline(false),
+                    ]),
+            ]);
+    }
+}

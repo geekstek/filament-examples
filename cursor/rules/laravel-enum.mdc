@@ -7,6 +7,8 @@ globs: src/Enums/*.php
 
 ## 基础结构规范
 
+**注意**: 请参考 @.cursor/templates/enum-template.php.stub 示例文件
+
 ### 文件头部
 ```php
 <?php
@@ -23,22 +25,10 @@ use Geekstek\Support\Enums\Concerns\HasEnumHelpers;
 
 ### 枚举声明
 - **必须** 使用 `string` 类型的枚举值
-- **必须** 实现 `HasColor`, `HasDescription`, `HasLabel` 接口
+- **必须** 实现 `HasLabel`, `HasDescription`, `HasColor`接口
 - **必须** 使用 `HasEnumHelpers` trait
-
-```php
-enum StatusEnum: string implements HasColor, HasDescription, HasLabel
-{
-    use HasEnumHelpers;
-    
-    private const TRANSLATIONS = 'package::enums/status-enum.';
-    
-    case ACTIVE = 'active';
-    case INACTIVE = 'inactive';
-    
-    public const DEFAULT = self::ACTIVE;
-}
-```
+- **判断** 是否需要实现 `HasDescription` 接口
+- **判断** 是否需要实现 `HasIcon` 接口
 
 ## 命名规范
 
@@ -51,17 +41,6 @@ enum StatusEnum: string implements HasColor, HasDescription, HasLabel
 - 使用 **SCREAMING_SNAKE_CASE**
 - 使用清晰的业务术语
 - 保持简洁但具有描述性
-
-```php
-// ✅ 好的命名
-case PENDING = 'pending';
-case COMPLETED = 'completed';
-case FAILED = 'failed';
-
-// ❌ 避免的命名
-case STATUS_1 = 'status_1';
-case TEMP = 'temp';
-```
 
 ## 必需方法实现
 
@@ -101,14 +80,6 @@ public function getIcon(): string
         self::INACTIVE => 'heroicon-o-x-circle',
     };
 }
-
-public function getBadgeColor(): string
-{
-    return match ($this) {
-        self::ACTIVE => 'green',
-        self::INACTIVE => 'gray',
-    };
-}
 ```
 
 ## 业务逻辑方法
@@ -118,117 +89,9 @@ public function getBadgeColor(): string
 - 使用 `can` 前缀检查操作权限
 - 使用 `needs` 或 `requires` 前缀检查需求
 
-```php
-// 状态检查
-public function isActive(): bool
-{
-    return $this === self::ACTIVE;
-}
 
-// 权限检查
-public function canBeEdited(): bool
-{
-    return $this === self::DRAFT;
-}
-
-// 需求检查
-public function requiresApproval(): bool
-{
-    return in_array($this, [self::PENDING, self::DRAFT]);
-}
-```
-
-### 状态流转方法
-```php
-public function getNextPossibleStatuses(): array
-{
-    return match ($this) {
-        self::DRAFT => [self::PENDING, self::CANCELLED],
-        self::PENDING => [self::APPROVED, self::REJECTED],
-        self::APPROVED => [self::COMPLETED],
-        default => [],
-    };
-}
-
-public function isFinalStatus(): bool
-{
-    return in_array($this, [self::COMPLETED, self::CANCELLED]);
-}
-```
-
-## 静态工厂方法
-
-### 基础选项方法
-```php
-public static function getOptions(): array
-{
-    return collect(self::cases())
-        ->mapWithKeys(fn ($status) => [$status->value => $status->getDescription()])
-        ->toArray();
-}
-```
-
-### 分类筛选方法
-```php
-public static function getActiveStatuses(): array
-{
-    return collect(self::cases())
-        ->filter(fn ($status) => $status->isActive())
-        ->mapWithKeys(fn ($status) => [$status->value => $status->getDescription()])
-        ->toArray();
-}
-
-public static function getEditableStatuses(): array
-{
-    return [self::DRAFT, self::REJECTED];
-}
-```
 
 ## 高级功能方法
-
-### 详细描述和帮助信息
-```php
-public function getDetailedDescription(): string
-{
-    return match ($this) {
-        self::DRAFT => '草稿状态，可以编辑和修改',
-        self::PENDING => '等待审批，不可修改',
-    };
-}
-
-public function getOperationPermissions(): array
-{
-    return match ($this) {
-        self::DRAFT => [
-            'edit' => true,
-            'delete' => true,
-            'submit' => true,
-        ],
-        self::PENDING => [
-            'edit' => false,
-            'delete' => false,
-            'submit' => false,
-        ],
-    };
-}
-```
-
-### 业务规则和限制
-```php
-public function getAmountLimit(): ?float
-{
-    return match ($this) {
-        self::CASH => 5000.00,
-        self::BANK_TRANSFER => null, // 无限制
-    };
-}
-
-public function isAmountAllowed(float $amount): bool
-{
-    $limit = $this->getAmountLimit();
-    return $limit === null || $amount <= $limit;
-}
-```
 
 ## 国际化支持
 
@@ -283,18 +146,6 @@ public function getLabel(): ?string
 - **优先** 使用 `match` 而不是 `switch`
 - 确保所有分支都有返回值
 - 对于复杂逻辑使用 `in_array()` 检查
-
-### 集合操作优化
-```php
-// ✅ 推荐：使用集合链式操作
-public static function getFilteredOptions(callable $filter): array
-{
-    return collect(self::cases())
-        ->filter($filter)
-        ->mapWithKeys(fn ($status) => [$status->value => $status->getDescription()])
-        ->toArray();
-}
-```
 
 ## 测试规范
 

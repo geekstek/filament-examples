@@ -1,0 +1,408 @@
+---
+description: Filament 4 Import 导入类开发规范与最佳实践
+globs: 
+  - "src/Filament/Resources/**/Imports/*.php"
+alwaysApply: false
+---
+# Filament 导入类开发规范
+
+本规则定义了在 Administrative 包中开发 Filament 导入类的标准规范和最佳实践。
+
+**注意**: 请参考 @.cursor/templates/filament-resource-import.php.stub 示例文件
+**注意**: 请使用 query 工具查看数据表设计
+
+## 基础结构规范
+
+### 1. 类命名与继承
+- 导入类必须以 `Importer` 结尾
+- 继承自 `Geekstek\Support\Filament\Imports\BaseImporter`
+- 使用 PascalCase 命名，与对应的模型名称保持一致
+
+```php  
+// ✅ 正确示例
+class EmployeeProfileImporter extends BaseImporter
+{
+    // 实现内容
+}
+
+// ❌ 错误示例
+class EmployeeImport extends BaseImporter  // 缺少 Importer 后缀
+class employee_profile_importer extends BaseImporter  // 命名不规范
+```
+
+### 2. 必需常量和属性
+每个导入类必须定义以下常量和属性：
+
+```php
+class ExampleImporter extends BaseImporter
+{
+    // 翻译键前缀常量 - 必需
+    public const TRANSLATIONS = 'administrative::resources/example.';
+    
+    // 绑定的模型类 - 必需
+    protected static ?string $model = Example::class;
+}
+```
+
+### 3. 目录结构规范
+导入类必须放置在对应资源的 `Imports` 子目录中：
+
+```
+src/Filament/Resources/
+├── ExampleResource/
+│   ├── Imports/
+│   │   └── ExampleImporter.php
+│   └── Pages/
+└── AnotherResource/
+    ├── Imports/
+    │   └── AnotherImporter.php
+    └── Pages/
+```
+
+## 核心方法实现
+
+### 1. getColumns() 方法
+定义导入列的配置，必须为静态方法：
+
+```php
+public static function getColumns(): array
+{
+    return [
+        ImportColumn::make('field_name')
+            ->label(__(self::TRANSLATIONS . 'fields.field_name.label'))
+            ->rules([
+                'required',
+                'string',
+                'max:255',
+            ]),
+            
+        // 枚举字段处理
+        ImportColumn::make('status')
+            ->label(__(self::TRANSLATIONS . 'fields.status.label'))
+            ->rules([
+                'required',
+                Rule::in(ExampleStatus::getLabelsArray()),
+            ])
+            ->fillRecordUsing(function ($state, $record) {
+                $record->status = ExampleStatus::fromLabel($state)->value;
+            }),
+    ];
+}
+```
+
+### 2. resolveRecord() 方法
+解析和创建记录实例：
+
+```php
+public function resolveRecord(): ?Example
+{
+    // 简单模型 - 使用 firstOrNew
+    return Example::firstOrNew([
+        'company_id' => $this->options['company_id'],
+        'name' => $this->data['name'],
+    ]);
+    
+    // 复杂逻辑 - 需要关联处理
+    $relatedModel = $this->resolveRelatedModel();
+    return Example::firstOrNew([
+        'company_id' => $this->options['company_id'],
+        'related_id' => $relatedModel->id,
+    ]);
+}
+```
+
+### 3. getImportName() 方法
+返回导入操作的显示名称：
+
+```php
+protected static function getImportName(): string
+{
+    return __(self::TRANSLATIONS . 'labels.navigation_label');
+}
+```
+
+### 4. getOptionsFormComponents() 方法
+定义导入选项表单组件：
+
+```php
+public static function getOptionsFormComponents(): array
+{
+    return [
+        Hidden::make('company_id')
+            ->default(Filament::getTenant()?->getKey()),
+    ];
+}
+```
+
+## 员工关联模式
+
+对于需要关联员工的导入类，使用统一的员工解析模式：
+
+### 1. 员工匹配字段
+```php
+// 标准员工匹配字段
+ImportColumn::make('name')
+    ->label('姓名')
+    ->rules([
+        'required',
+        'max:20',
+    ])
+    ->fillRecordUsing(function ($state, $record) {
+        // no-op：仅用于匹配员工，不写入目标模型
+    }),
+
+ImportColumn::make('phone')
+    ->label('手机号')
+    ->rules([
+        'required',
+    ])
+    ->fillRecordUsing(function ($state, $record) {
+        // no-op：仅用于匹配员工，不写入目标模型
+    }),
+```
+
+### 2. 员工解析方法
+```php
+protected function resolveEmployee(): EmployeeProfile
+{
+    if (blank($this->data['name'])) {
+        throw new RowImportFailedException('姓名不能为空');
+    }
+
+    if (blank($this->data['phone'])) {
+        throw new RowImportFailedException('手机号不能为空');
+    }
+
+    $employeeBuilder = EmployeeProfile::query()
+        ->whereHas('user', function ($query) {
+            $query->where('phone', $this->data['phone'])
+                ->where('name', $this->data['name']);
+        });
+
+    if ($this->options['company_id'] ?? false) {
+        $employeeBuilder->where('company_id', $this->options['company_id']);
+    }
+
+    if ($employeeBuilder->exists()) {
+        return $employeeBuilder->first();
+    }
+
+    throw new RowImportFailedException('找不到匹配的员工：姓名 "' . $this->data['name'] . '" 和手机号 "' . $this->data['phone'] . '"');
+}
+```
+
+## 数据处理钩子
+
+### 1. beforeFill() - 数据预处理
+用于在填充记录前处理数据，通常用于缓存需要特殊处理的字段：
+
+```php
+protected function beforeFill(): void
+{
+    // 缓存需要特殊处理的字段
+    $keysToCache = ['field1', 'field2', 'field3'];
+    
+    foreach ($keysToCache as $key) {
+        if (array_key_exists($key, $this->data)) {
+            $this->payload[$key] = $this->data[$key];
+            unset($this->data[$key]);
+        }
+    }
+}
+```
+
+### 2. beforeSave() - 保存前处理
+用于在保存前设置关联关系和必要字段：
+
+```php
+protected function beforeSave(): void
+{
+    // 处理员工关联
+    $employee = $this->resolveEmployee();
+    $this->getRecord()->employee_id = $employee->id;
+    
+    // 设置公司ID
+    if ($this->options['company_id'] ?? false) {
+        $this->getRecord()->company_id = $this->options['company_id'];
+    }
+}
+```
+
+### 3. saveRecord() - 自定义保存逻辑
+用于处理保存异常和提供更好的错误信息：
+
+```php
+public function saveRecord(): void
+{
+    try {
+        parent::saveRecord();
+    } catch (\Throwable $e) {
+        throw new RowImportFailedException('保存记录失败：' . $e->getMessage());
+    }
+}
+```
+
+## 字段处理最佳实践
+
+### 1. 枚举字段处理
+```php
+ImportColumn::make('status')
+    ->label(__(self::TRANSLATIONS . 'fields.status.label'))
+    ->rules([
+        'required',
+        Rule::in(ExampleStatus::getLabelsArray()),
+    ])
+    ->fillRecordUsing(function ($state, $record) {
+        $record->status = ExampleStatus::fromLabel($state)->value;
+    }),
+```
+
+### 2. 布尔字段处理
+```php
+ImportColumn::make('is_active')
+    ->label(__(self::TRANSLATIONS . 'fields.is_active.label'))
+    ->rules([
+        'nullable',
+        'in:是,否',
+    ])
+    ->fillRecordUsing(function ($state, $record) {
+        if (blank($state)) {
+            $record->is_active = false;
+            return;
+        }
+        $record->is_active = $state === '是';
+    }),
+```
+
+### 3. 外键关联处理
+```php
+ImportColumn::make('category_id')
+    ->label('分类')
+    ->rules(function (array $options, ?Example $record): array {
+        return [
+            'required',
+            Rule::exists('categories', 'name')
+                ->where(fn ($query) => $query->where('company_id', $options['company_id'] ?? null)),
+        ];
+    })
+    ->fillRecordUsing(function ($state, $record, $options) {
+        $record->category_id = Category::query()
+            ->where('name', $state)
+            ->where('company_id', $options['company_id'] ?? null)
+            ->first()->id;
+    }),
+```
+
+### 4. 日期字段处理
+```php
+ImportColumn::make('start_date')
+    ->label('开始日期')
+    ->rules([
+        'required',
+        'date',
+        'date_format:Y-m-d',
+    ]),
+```
+
+### 5. 数值字段处理
+```php
+ImportColumn::make('amount')
+    ->label('金额')
+    ->integer()  // 或 ->numeric()
+    ->rules([
+        'required',
+        'numeric',
+        'min:0',
+    ]),
+```
+
+## 验证规则最佳实践
+
+### 1. 唯一性验证
+```php
+->rules(function (array $options, ?Example $record): array {
+    return [
+        'required',
+        Rule::unique('examples', 'name')
+            ->where(fn ($query) => $query->where('company_id', $options['company_id'] ?? null))
+            ->ignore($record?->getKey()),
+    ];
+})
+```
+
+### 2. 存在性验证
+```php
+->rules(function (array $options, ?Example $record): array {
+    return [
+        'required',
+        Rule::exists('related_table', 'field')
+            ->where('company_id', $options['company_id'] ?? null),
+    ];
+})
+```
+
+## 错误处理规范
+
+### 1. 使用 RowImportFailedException
+```php
+if (blank($this->data['required_field'])) {
+    throw new RowImportFailedException('必填字段不能为空');
+}
+
+if (!$relatedModel) {
+    throw new RowImportFailedException('找不到关联记录：' . $this->data['related_field']);
+}
+```
+
+### 2. 提供清晰的错误信息
+- 错误信息应该明确指出问题所在
+- 包含相关的数据值以便调试
+- 使用中文错误信息以提高用户体验
+
+## 性能优化建议
+
+### 1. 使用 firstOrNew 而非 create
+```php
+// ✅ 推荐 - 避免重复创建
+return Example::firstOrNew([
+    'unique_field' => $this->data['unique_field'],
+]);
+
+// ❌ 避免 - 可能导致重复记录
+return Example::create($this->data);
+```
+
+### 2. 批量查询优化
+在 resolveRecord 中避免 N+1 查询问题，可以考虑使用缓存或批量查询。
+
+## 测试建议
+
+每个导入类都应该编写对应的测试：
+
+1. **成功导入测试** - 验证正常数据的导入流程
+2. **验证失败测试** - 验证各种验证规则的正确性
+3. **关联处理测试** - 验证员工匹配等关联逻辑
+4. **错误处理测试** - 验证异常情况的处理
+
+## 文档要求
+
+### 1. 类级别注释
+```php
+/**
+ * 员工档案导入器
+ * 
+ * 支持通过 Excel 批量导入员工档案信息，包括：
+ * - 基本信息（姓名、性别、出生日期等）
+ * - 联系信息（手机号、地址等）
+ * - 证件信息（身份证等）
+ */
+class EmployeeProfileImporter extends BaseImporter
+{
+    // 实现内容
+}
+```
+
+### 2. 方法注释
+重要方法应该添加清晰的注释说明其用途和处理逻辑。
+
+遵循这些规范可以确保导入类的一致性、可维护性和可扩展性。

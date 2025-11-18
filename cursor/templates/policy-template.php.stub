@@ -1,0 +1,29 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Policies; // 替换为实际的业务命名空间
+
+use Geekstek\Support\Policies\AbstractPolicy;
+use Geekstek\Uacl\Models\User;
+use Illuminate\Database\Eloquent\Model;
+/**
+ * 使用说明
+ * - 替换 `XXXYYYResource:` 为实际的业务权限前缀
+ * - AbstractPolicy 为抽象策略基类, 需要继承并实现 getPermissionPrefix 方法
+ * - AbstractPolicy 提供 viewAny, view, create, update, delete, deleteAny, forceDelete, forceDeleteAny, reorder, replicate, restore, restoreAny, import, export, activity 等方法, 需要根据实际业务需求进行实现
+ * - 对于Filament Resource 中的 Filamenet Actions, 需要根据实际业务需求进行实现
+ */
+class XXXPolicy extends AbstractPolicy
+{
+    protected function getPermissionPrefix(): string
+    {
+        return 'XXXYYYResource:'; // XXX为业务命名空间, YYY为对应Filament Resource的类名
+    }
+
+    // 禁用Action方法, 需要根据实际业务需求进行实现
+    public function disableAction(User $user, Model $record): bool
+    {
+        return $user->can($this->getPermissionPrefix() . 'disable-action');
+    }
+}

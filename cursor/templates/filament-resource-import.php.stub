@@ -1,0 +1,128 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Filament\Resources\YYY\Imports; // XXX替换为实际的业务命名空间, YYY替换为模型名(复数)
+
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
+use Filament\Actions\Imports\ImportColumn;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\Hidden;
+use Geekstek\XXX\Enums\EducationDegree;
+use Geekstek\XXX\Models\YYY; // XXX替换为实际的业务命名空间, YYY替换为模型名
+use Geekstek\Support\Filament\Imports\BaseImporter;
+use Geekstek\Uacl\Enums\CertificateType;
+use Geekstek\Uacl\Enums\UserGender;
+use Geekstek\Uacl\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rule;
+
+class YYYImporter extends BaseImporter // YYY替换为模型名(单数)
+{
+    protected static ?string $model = YYY::class; // YYY替换为模型名(单数)
+
+    public const TRANSLATIONS = 'XXX::resources/YYY.';
+
+    /**
+     * 定义导入列
+     */
+    public static function getColumns(): array
+    {
+        return [
+            ImportColumn::make('name')
+                ->label('姓名')
+                ->rules([
+                    'required',
+                    'max:20',
+                ])
+                ->fillRecordUsing(function ($state, $record) {
+                    // no-op：仅用于匹配员工，不写入教育模型
+                }),
+
+            ImportColumn::make('phone')
+                ->label('手机号')
+                ->rules([
+                    'required',
+                ])
+                ->fillRecordUsing(function ($state, $record) {
+                    // no-op：仅用于匹配员工，不写入教育模型
+                }),
+
+            ImportColumn::make('school_name')
+                ->label('学校名称')
+                ->rules([
+                    'nullable',
+                ]),
+
+            ImportColumn::make('degree')
+                ->label('学历')
+                ->rules([
+                    'required',
+                    Rule::in(EducationDegree::getLabelsArray()),
+                ])
+                ->fillRecordUsing(function ($state, $record) {
+                    $record->degree = YYY::fromLabel($state)->value;
+                }),
+
+            ImportColumn::make('start_date')
+                ->label('开始日期')
+                ->rules([
+                    'nullable',
+                    'date',
+                    'date_format:Y-m-d',
+                ])
+                ->fillRecordUsing(fn (YYY $record): ?string => self::parseDateSafely($record->start_date)),
+
+            ExportColumn::make('is_full_time')
+                ->label(__(self::TRANSLATIONS . 'fields.is_full_time.label'))
+                ->rules([
+                    'nullable',
+                    'in:是,否',
+                ])
+                ->fillRecordUsing(fn (YYY $record): ?string => self::parseBooleanSafely($record->is_full_time)),
+        ];
+    }
+
+    /**
+     * 解析记录
+     */
+    public function resolveRecord(): ?CertificateType
+    {
+        return CertificateType::firstOrNew([
+            'company_id' => $this->options['company_id'],
+            'name' => $this->data['name'],
+            'code' => $this->data['code'],
+            'issuing_authority' => $this->data['issuing_authority'],
+            'validity_period' => $this->data['validity_period'],
+            'is_required' => $this->data['is_required'],
+            'description' => $this->data['description'],
+            'exam_requirements' => $this->data['exam_requirements'],
+        ]);
+    }
+
+    protected function beforeSave(): void
+    {
+        // 通过手机号等信息处理用户与档案关系，且仅在校验通过后执行。
+        $employee = $this->resolveEmployee();
+
+        // 绑定员工与公司到员工爱好记录
+        $this->getRecord()->employee_id = $employee->id;
+
+        if ($this->options['company_id'] ?? false) {
+            $this->getRecord()->company_id = $this->options['company_id'];
+        }
+    }
+
+    protected static function getImportName(): string
+    {
+        return __(self::TRANSLATIONS . 'labels.navigation_label');
+    }
+
+    public static function getOptionsFormComponents(): array
+    {
+        return [
+            Hidden::make('company_id')
+                ->default(Filament::getTenant()?->getKey()),
+        ];
+    }
+}

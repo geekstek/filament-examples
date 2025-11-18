@@ -1,0 +1,117 @@
+---
+description: Filament 4 Resource 开发规范与最佳实践
+globs: 
+  - "src/Filament/Resources/**/*Resource.php"
+alwaysApply: true
+---
+# Filament Resource 开发规范
+
+基于 模块包中的 Filament 组件分析，总结出以下 Filament Resource 开发的最佳实践和规范。
+
+## 目录结构规范
+
+### 1. Resource 目录组织
+```
+Resources/
+├── ResourceName/
+│   ├── ResourceNameResource.php     # 主资源类 @.cursor/templates/filament-main-resource.php.stub
+│   ├── Actions/                     # 自定义操作
+│   │   └── CustomAction.php
+│   ├── Exports/                     # 导出类
+│   │   └── ResourceNameExporter.php # @.cursor/templates/filament-resource-import.php.stub
+│   ├── Imports/                     # 导入类
+│   │   └── ResourceNameImporter.php # @.cursor/templates/filament-resource-export.php.stub
+│   ├── Pages/                       # 页面类 
+│   │   ├── CreateResourceName.php   # @.cursor/templates/filament-resource-create-page.php.stub
+│   │   ├── EditResourceName.php     # @.cursor/templates/filament-resource-edit-page.php.stub
+│   │   ├── ListResourceNames.php    # @.cursor/templates/filament-resource-list-page.php.stub
+│   │   └── ViewResourceName.php     # @.cursor/templates/filament-resource-view-page.php.stub
+│   ├── RelationManagers/            # 关联管理器 
+│   │   └── RelatedResourceManager.php # @.cursor/templates/
+│   ├── Schemas/                     # 表单和信息列表
+│   │   ├── ResourceNameForm.php     # @.cursor/templates/filament-resource-form.php.stub
+│   │   └── ResourceNameInfolist.php # @.cursor/templates/filament-resource-infolist.php.stub
+│   └── Tables/                      # 表格定义 
+│       └── ResourceNamesTable.php  # @.cursor/templates/filament-resource-table.php.stub
+```
+
+### 2. 文件命名规范
+- **Resource 类**: `{ModelName}Resource.php`
+- **页面类**: `{Action}{ModelName}.php` (如 `CreateEmployeeProfile.php`)
+- **Schema 类**: `{ModelName}{Type}.php` (如 `EmployeeProfileForm.php`)
+- **Table 类**: `{ModelName}sTable.php` (复数形式)
+- **Manager 类**: `{RelationName}Manager.php`
+- **Importer 类**: `{ModelName}Importer.php`
+- **Exporter 类**: `{ModelName}Exporter.php`
+
+### 3. 过滤器定义
+```php
+// 日期范围过滤器
+DateRangeFilter::make('created_at')
+    ->label('创建时间')
+    ->displayFormat('YYYY-MM-DD')
+    ->format('Y-m-d'),
+
+// 自定义过滤器
+Filter::make('custom_filter')
+    ->label('自定义过滤器')
+    ->query(fn (Builder $query): Builder => $query->where('condition', 'value'))
+    ->toggle(),
+```
+
+## 国际化规范
+
+### 1. 翻译键命名
+```php
+// 资源翻译文件结构
+resources/lang/zh_CN/resources/model-name.php
+
+return [
+    'labels' => [
+        'navigation_label' => '导航标签',
+        'model_label' => '模型标签',
+        'plural_model_label' => '复数模型标签',
+    ],
+    'fields' => [
+        'field_name' => [
+            'label' => '字段标签',
+            'helper' => '字段帮助文本',
+        ],
+    ],
+    'sections' => [
+        'section_name' => [
+            'label' => '分组标签',
+        ],
+    ],
+];
+```
+
+## 安全规范
+
+### 1. 多租户支持
+```php
+// 在 Resource 中启用
+protected static bool $isScopedToTenant = true;
+
+// 在数据处理中添加租户ID
+if (Filament::getTenant()) {
+    $data['company_id'] = Filament::getTenant()->id;
+}
+```
+
+### 2. 权限控制
+```php
+// 使用权限 Trait
+use ResourcePermissionTrait;
+
+// 定义权限
+public static function getPermissions(): array
+{
+    return [
+        'view-any', 'create', 'view', 'update', 'delete',
+        'import', 'export', 'activity-log',
+    ];
+}
+```
+
+遵循以上规范可以确保 Filament Resource 的一致性、可维护性和性能。

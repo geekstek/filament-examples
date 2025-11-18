@@ -8,6 +8,8 @@ globs: src/Models/*.php
 
 ## 基础结构规范
 
+**注意**: 请参考 @.cursor/templates/model-template.php.stub 示例文件
+
 ### 1. 文件头声明
 ```php
 <?php
