@@ -1,6 +1,8 @@
 ---
 alwaysApply: true
 description: Laravel Data 替代 Form Request 的开发规范和最佳实践
+globs:
+  - "src/Data/**/*Data.php"
 ---
 
 # Laravel Data 替代 Form Request 开发规范

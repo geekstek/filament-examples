@@ -1,6 +1,8 @@
 ---
 alwaysApply: true
 description: Laravel API Resource 开发规范和最佳实践
+globs:
+  - "src/Http/Resources/**/*Resource.php"
 ---
 
 # Laravel API Resource 开发规范
