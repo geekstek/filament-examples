@@ -1,0 +1,447 @@
+---
+alwaysApply: true
+description: Laravel API 控制器开发规范和最佳实践
+---
+
+# Laravel API 控制器开发规范
+
+本项目基于 Laravel 12 + PHP 8.2，使用以下核心技术栈进行 API 开发。
+
+## 基础结构规范
+
+**注意**: 请参考 @.cursor/templates/laravel-api.php.stub 示例文件
+
+## 核心技术栈
+
+- **Laravel 12** - 主框架
+- **PHP 8.2** - 编程语言（严格类型模式）
+- **Laravel Sanctum 4** - API 认证
+- **Laravel Permission (spatie/laravel-permission)** - 权限管理
+- **Spatie Query Builder 6** - 查询构建器
+- **Laravel Data 4** - 数据传输对象
+- **Laravel Route Attributes 1** - 路由属性
+- **Scribe API Documentation 5** - API 文档生成
+
+## 控制器结构规范
+
+### 1. 基础结构
+
+所有 API 控制器必须遵循以下结构：
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\{PackageName}\Http\Controllers\Api\{SubNamespace};
+
+use Geekstek\ApiLog\Http\Middleware\LogClientRequests;
+use Illuminate\Routing\Controller;
+use Knuckles\Scribe\Attributes\Authenticated;
+use Knuckles\Scribe\Attributes\Endpoint as ScribeEndpoint;
+use Knuckles\Scribe\Attributes\Group as ScribeGroup;
+use Knuckles\Scribe\Attributes\Subgroup as ScribeSubgroup;
+use Spatie\RouteAttributes\Attributes\Group as RouteGroup;
+use Spatie\RouteAttributes\Attributes\Middleware;
+
+#[RouteGroup(
+    prefix: 'api/{module-slug}',
+    as: 'api.{module-slug}.'
+)]
+#[Middleware([
+    'api',
+    LogClientRequests::class,
+    // 其他中间件...
+])]
+#[ScribeEndpoint(
+    title: '',
+    description: <<<'DESC'
+        业务描述...
+    DESC,
+)]
+#[ScribeGroup(name: '模块名')]
+#[ScribeSubgroup(name: '功能名')]
+class {ControllerName}Controller extends Controller
+{
+    // 控制器实现
+}
+```
+
+### 2. 必需的属性和中间件
+
+- **严格类型声明**: `declare(strict_types=1);`
+- **路由组**: `#[RouteGroup(prefix: 'api/{module-slug}', as: 'api.{module-slug}.')]`
+- **中间件**: 必须包含 `'api'` 和 `LogClientRequests::class`
+- **文档属性**: 使用 Scribe 属性进行 API 文档生成
+- **认证标记**: 需要认证的接口使用 `#[Authenticated]`
+
+### 3. 认证中间件
+
+根据业务需求选择合适的认证方式：
+
+```php
+// 标准认证（UACL + Platform）
+#[Middleware([
+    'api',
+    LogClientRequests::class,
+    'auth:uacl,platform',
+])]
+#[Authenticated]
+
+// Sanctum 认证
+#[Middleware([
+    'api',
+    LogClientRequests::class,
+    'auth:sanctum',
+])]
+#[Authenticated]
+
+// 无需认证（如回调接口）
+#[Middleware([
+    'api',
+    LogClientRequests::class,
+])]
+```
+
+### 4. 前端 Slug 验证
+
+需要验证前端 Slug 的接口：
+
+```php
+use Geekstek\Frontend\Http\Middleware\ValidateFrontendSlug;
+
+#[Middleware([
+    'api',
+    LogClientRequests::class,
+    ValidateFrontendSlug::class,
+])]
+```
+
+## 依赖注入规范
+
+### 1. 构造函数注入（推荐）
+
+优先使用构造函数注入服务类：
+
+```php
+public function __construct(
+    protected TokenService $tokenService,
+) {}
+```
+
+或使用传统方式：
+
+```php
+protected TokenService $tokenService;
+
+public function __construct(TokenService $tokenService)
+{
+    $this->tokenService = $tokenService;
+}
+```
+
+### 2. 方法参数注入
+
+对于 Action 类，使用方法参数注入：
+
+```php
+public function getTokenByJsCode(
+    JsCodeData $data,
+    JsCode2SessionAction $jsCode2SessionAction
+) {
+    // 实现逻辑
+}
+```
+
+### 3. 避免使用 app() 辅助函数
+
+**不推荐**：
+```php
+public function __construct()
+{
+    $this->callbackService = app(CallbackService::class);
+}
+```
+
+**推荐**：使用构造函数注入
+
+## 方法实现规范
+
+### 1. 使用 Action 模式
+
+业务逻辑应放在 Action 类中：
+
+```php
+#[Post(
+    uri: 'wechat/mini-program/auth/get-token-by-js-code',
+    name: 'wechat.mini-program.auth.get-token-by-js-code',
+)]
+#[ResponseFromApiResource(
+    name: UserTokenResource::class,
+    model: PlatformUser::class,
+)]
+public function getTokenByJsCode(
+    JsCodeData $data,
+    JsCode2SessionAction $jsCode2SessionAction
+) {
+    $frontendSlug = request()->header('X-Frontend-Slug');
+
+    $platformUser = $jsCode2SessionAction->execute(
+        frontendSlug: $frontendSlug,
+        data: $data,
+    );
+
+    $tokenInfo = $this->tokenService->createOrRefreshToken(
+        platformUser: $platformUser
+    );
+
+    return UserTokenResource::make($tokenInfo)
+        ->additional([
+            'success' => true,
+            'code' => 0,
+            'message' => '获取用户Token成功',
+        ]);
+}
+```
+
+### 2. 使用 Service 模式
+
+复杂业务逻辑应放在 Service 类中：
+
+```php
+#[Post(
+    uri: 'payment/{paymentChannelSlug}',
+    name: 'payment'
+)]
+public function paymentCallback(
+    ServerRequestInterface $request,
+    string $paymentChannelSlug
+) {
+    try {
+        return $this->callbackService->paymentCallback(
+            $request,
+            $paymentChannelSlug
+        );
+    } catch (Exception $e) {
+        Log::error('支付回调失败：' . $e->getMessage());
+
+        return response()->json([
+            'message' => '支付回调失败：' . $e->getMessage(),
+        ]);
+    }
+}
+```
+
+### 3. 直接 JSON 响应
+
+简单接口可直接返回 JSON：
+
+```php
+#[Get(
+    uri: 'auth-info',
+    name: 'auth-info',
+)]
+#[Response(
+    content: [
+        'data' => [
+            'user' => [],
+            'platform_user' => [],
+            'roles' => [],
+            'permissions' => [],
+        ],
+        'success' => true,
+        'code' => 200,
+        'message' => '获取用户角色及权限成功',
+    ],
+    status: 200,
+    description: '获取用户角色及权限成功',
+)]
+public function getAuthInfo(AuthInfoAction $authInfoAction)
+{
+    $authUser = Auth::user();
+
+    $authInfo = $authInfoAction->execute(
+        authUser: $authUser
+    );
+
+    return response()->json([
+        'data' => $authInfo,
+        'success' => true,
+        'code' => 0,
+        'message' => '获取用户角色及权限成功',
+    ]);
+}
+```
+
+## 响应格式规范
+
+### 1. 使用 Resource 响应
+
+```php
+return ResourceClass::make($resource)
+    ->additional([
+        'success' => true,
+        'code' => 0,
+        'message' => '操作成功',
+    ]);
+```
+
+### 2. 直接 JSON 响应
+
+```php
+return response()->json([
+    'data' => $data,
+    'success' => true,
+    'code' => 0,
+    'message' => '操作成功',
+]);
+```
+
+### 3. 错误响应
+
+```php
+return response()->json([
+    'message' => '错误信息',
+    'success' => false,
+    'code' => 500,
+]);
+```
+
+## 异常处理规范
+
+### 1. 使用 try-catch 捕获异常
+
+```php
+public function paymentCallback(
+    ServerRequestInterface $request,
+    string $paymentChannelSlug
+) {
+    try {
+        return $this->callbackService->paymentCallback(
+            $request,
+            $paymentChannelSlug
+        );
+    } catch (Exception $e) {
+        Log::error('支付回调失败：' . $e->getMessage());
+
+        return response()->json([
+            'message' => '支付回调失败：' . $e->getMessage(),
+        ]);
+    }
+}
+```
+
+### 2. 条件判断处理
+
+```php
+public function jsapi(JsapiRequest $request)
+{
+    if ($request->payment_status === 'get_brand_wcpay_request:ok') {
+        try {
+            $paymentSlug = $request->payment_slug;
+            $internalOrderNo = $request->internal_order_no;
+
+            return $this->callback($paymentSlug, $internalOrderNo);
+        } catch (Exception $e) {
+            Log::error('前端微信支付 JSAPI 回调失败：' . $e->getMessage());
+
+            return response()->json([
+                'message' => '前端微信支付 JSAPI 回调失败：' . $e->getMessage(),
+                'success' => false,
+                'code' => 500,
+            ]);
+        }
+    }
+
+    return response()->json([
+        'message' => '支付不成功，没有操作',
+        'success' => false,
+        'code' => 200,
+    ]);
+}
+```
+
+## 路由属性规范
+
+### 1. 标准路由方法
+
+```php
+#[Get(uri: 'resources', name: 'resources.index')]
+#[Post(uri: 'resources', name: 'resources.store')]
+#[Get(uri: 'resources/{id}', name: 'resources.show')]
+#[Put(uri: 'resources/{id}', name: 'resources.update')]
+#[Delete(uri: 'resources/{id}', name: 'resources.destroy')]
+```
+
+### 2. 路由参数验证
+
+```php
+use Spatie\RouteAttributes\Attributes\WhereNumber;
+
+#[Get(uri: 'resources/{id}', name: 'resources.show')]
+#[WhereNumber('id')]
+```
+
+### 3. 方法级中间件
+
+```php
+#[Post(
+    uri: 'wechat/mini-program/auth/get-token-by-js-code',
+    name: 'wechat.mini-program.auth.get-token-by-js-code',
+    middleware: [],
+)]
+```
+
+## 文档注解规范
+
+### 1. Scribe 属性
+
+```php
+#[ScribeEndpoint(
+    title: '',
+    description: <<<'DESC'
+        详细的业务描述...
+    DESC,
+)]
+#[ScribeGroup(name: '模块名')]
+#[ScribeSubgroup(name: '功能名')]
+#[Authenticated]
+#[Header(name: 'X-Frontend-Slug', example: 'geekstek')]
+```
+
+### 2. 响应文档
+
+```php
+#[ResponseFromApiResource(
+    name: ResourceClass::class,
+    model: Model::class,
+)]
+
+// 或
+
+#[Response(
+    content: [
+        'data' => [],
+        'success' => true,
+        'code' => 200,
+        'message' => '操作成功',
+    ],
+    status: 200,
+    description: '操作成功',
+)]
+```
+
+## 业务逻辑分离
+
+- **控制器**: 仅处理 HTTP 层逻辑，参数验证，响应格式化
+- **Service 层**: 处理复杂业务逻辑
+- **Action 层**: 处理单一职责的业务操作
+- **Data 层**: 数据传输和验证
+- **Resource 层**: 响应格式化
+
+## 命名规范
+
+- **控制器**: `{Resource}Controller`
+- **方法**: 使用描述性命名，如 `getTokenByJsCode`, `updateUserInfo`
+- **路由**: 使用 kebab-case，如 `wechat/mini-program/auth/get-token-by-js-code`
+- **中间件**: 按功能分组，认证在前，日志在后

@@ -1,0 +1,479 @@
+---
+alwaysApply: true
+description: Laravel API Resource 开发规范和最佳实践
+---
+
+# Laravel API Resource 开发规范
+
+本项目使用 **Laravel API Resources** 进行响应格式化，基于 `BaseResource` 提供便捷方法。
+
+## 基础结构规范
+
+**注意**: 请参考 @.cursor/templates/laravel-api-resource.php.stub 示例文件
+
+## 核心技术栈
+
+- **Laravel 12** - 主框架
+- **PHP 8.2** - 编程语言（严格类型模式）
+- **Laravel API Resources** - 响应格式化
+- **Scribe API Documentation 5** - API 文档生成
+- **BaseResource** - 项目基础 Resource 类
+
+## Resource 类结构规范
+
+### 1. 基础结构
+
+所有 Resource 类必须遵循以下结构：
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\{PackageName}\Http\Resources;
+
+use Geekstek\Support\Http\Resources\BaseResource;
+use Illuminate\Http\Request;
+use Knuckles\Scribe\Attributes\ResponseField;
+
+class {ResourceName}Resource extends BaseResource
+{
+    #[ResponseField('id', 'integer', '资源ID')]
+    #[ResponseField('name', 'string', '资源名称')]
+    #[ResponseField('created_at', 'string', '创建时间')]
+    #[ResponseField('updated_at', 'string', '更新时间')]
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->whenAttributeExists('name'),
+            'created_at' => $this->whenHasDate('created_at', 'Y-m-d H:i:s'),
+            'updated_at' => $this->whenHasDate('updated_at', 'Y-m-d H:i:s'),
+        ];
+    }
+}
+```
+
+### 2. 必需的属性和方法
+
+- **严格类型声明**: `declare(strict_types=1);`
+- **继承 BaseResource**: 使用项目基础 Resource 类
+- **响应字段文档**: 使用 `#[ResponseField]` 属性
+- **类型声明**: `toArray(Request $request): array`
+
+## BaseResource 便捷方法
+
+### 1. 属性存在检查
+
+```php
+// 仅当属性存在时才输出
+'name' => $this->whenAttributeExists('name'),
+
+// 带默认值
+'description' => $this->whenAttributeExists('description', '默认描述'),
+
+// 带转换函数
+'amount' => $this->whenAttributeExists('amount', fn ($value) => number_format($value, 2)),
+```
+
+### 2. 日期格式化
+
+```php
+// 默认 ISO-8601 格式
+'created_at' => $this->whenHasDate('created_at'),
+
+// 自定义格式
+'created_at' => $this->whenHasDate('created_at', 'Y-m-d H:i:s'),
+'start_at' => $this->whenHasDate('start_at', 'Y-m-d'),
+
+// 指定时区
+'created_at' => $this->whenHasDate('created_at', DATE_ATOM, 'Asia/Shanghai'),
+
+// Unix 时间戳（字符串）
+'created_at' => $this->whenHasDate('created_at', 'U'),
+```
+
+### 3. 枚举处理
+
+```php
+// 枚举标签（优先使用 getLabel()，否则回退到枚举 name 或 value）
+'status' => $this->whenHasEnumLabel('status'),
+'status_label' => $this->whenHasEnumLabel('status'),
+
+// 枚举值（BackedEnum => value；普通枚举 => name）
+'status_value' => $this->whenHasEnumValue('status'),
+
+// 枚举元数据（包含 value, label, name, description）
+'status_meta' => $this->whenHasEnumMeta('status'),
+```
+
+### 4. 存储路径转 URL
+
+```php
+// 单个存储路径转 URL
+'avatar_url' => $this->whenHasStorageUrl('avatar'),
+
+// 批量存储路径转 URL（多图场景）
+'images_urls' => $this->whenHasStorageUrls('images'),
+```
+
+### 5. 关联资源
+
+#### 单关系（hasOne / belongsTo / hasOneThrough）
+
+```php
+'property' => $this->includeOne('property', PropertyResource::class),
+'user' => $this->includeOne('user', UserResource::class),
+'receipt' => $this->includeOne('receipt', ReceiptResource::class),
+```
+
+#### 多关系（hasMany / belongsToMany / hasManyThrough）
+
+```php
+'bill_orders' => $this->includeMany('billOrders', BillOrderResource::class),
+'comments' => $this->includeMany('comments', CommentResource::class),
+```
+
+#### 计数（withCount）
+
+```php
+'comments_count' => $this->includeCount('comments'),
+'attachments_count' => $this->includeCount('attachments'),
+```
+
+#### 多态单关系（morphTo）
+
+```php
+'commentable' => $this->includeMorphTo('commentable', [
+    \App\Models\Post::class => PostResource::class,
+    'video' => VideoResource::class,  // 支持 morphMap 别名
+]),
+
+'thumbnail' => $this->includeMorphTo('thumbnail', [
+    \App\Models\Image::class => ImageResource::class,
+]),
+```
+
+#### 多态多关系（morphMany / morphToMany / morphedByMany）
+
+```php
+'attachments' => $this->includeMorphMany('attachments', [
+    \App\Models\Image::class => ImageResource::class,
+    \App\Models\File::class => FileResource::class,
+]),
+
+// 或使用别名
+'attachments' => $this->includeMorphToMany('attachments', [
+    'image' => ImageResource::class,
+    'file' => FileResource::class,
+]),
+```
+
+## 响应字段文档规范
+
+### 1. ResponseField 属性
+
+使用 `#[ResponseField]` 属性为每个字段提供文档：
+
+```php
+#[ResponseField('id', 'integer', '资源ID')]
+#[ResponseField('name', 'string', '资源名称')]
+#[ResponseField('description', 'string', '描述信息')]
+#[ResponseField('status', 'string', '状态')]
+#[ResponseField('is_active', 'boolean', '是否激活')]
+#[ResponseField('amount', 'float', '金额')]
+#[ResponseField('count', 'integer', '数量')]
+#[ResponseField('created_at', 'string', '创建时间')]
+#[ResponseField('updated_at', 'string', '更新时间')]
+```
+
+### 2. 字段类型
+
+支持的字段类型：
+- `'integer'` - 整数
+- `'string'` - 字符串
+- `'float'` - 浮点数
+- `'boolean'` - 布尔值
+- `'array'` - 数组
+- `'object'` - 对象
+- `'date'` - 日期
+- `'datetime'` - 日期时间
+- `'number'` - 数字（整数或浮点数）
+
+### 3. 复杂字段文档
+
+```php
+#[ResponseField('images', 'array', '图片列表')]
+#[ResponseField('tags', 'array', '标签列表')]
+#[ResponseField('user', 'object', '用户信息')]
+#[ResponseField('metadata', 'object', '元数据')]
+#[ResponseField('settings', 'object', '设置信息')]
+```
+
+## 常见字段处理模式
+
+### 1. 基础字段
+
+```php
+'id' => $this->id,
+'name' => $this->whenAttributeExists('name'),
+'description' => $this->whenAttributeExists('description'),
+'amount' => $this->whenAttributeExists('amount'),
+```
+
+### 2. 日期字段
+
+```php
+'created_at' => $this->whenHasDate('created_at', 'Y-m-d H:i:s'),
+'updated_at' => $this->whenHasDate('updated_at', 'Y-m-d H:i:s'),
+'start_at' => $this->whenHasDate('start_at', 'Y-m-d'),
+'end_at' => $this->whenHasDate('end_at', 'Y-m-d'),
+'contract_at' => $this->whenHasDate('contract_at', 'Y-m-d H:i:s'),
+```
+
+### 3. 枚举字段
+
+```php
+'status' => $this->whenHasEnumLabel('status'),
+'status_label' => $this->whenHasEnumLabel('status'),
+'bidder_type' => $this->whenHasEnumLabel('bidder_type'),
+```
+
+### 4. 关联字段
+
+```php
+// 单关系
+'property' => $this->includeOne('property', PropertyResource::class),
+'contract' => $this->includeOne('contract', ContractResource::class),
+'receipt' => $this->includeOne('receipt', ReceiptResource::class),
+
+// 多关系
+'bill_orders' => $this->includeMany('billOrders', BillOrderResource::class),
+'unpaid_bill_orders' => $this->includeMany('unpaidBillOrders', BillOrderResource::class),
+'paid_bill_orders' => $this->includeMany('paidBillOrders', BillOrderResource::class),
+```
+
+### 5. 存储路径字段
+
+```php
+'avatar_url' => $this->whenHasStorageUrl('avatar'),
+'image_url' => $this->whenHasStorageUrl('image'),
+'images_urls' => $this->whenHasStorageUrls('images'),
+```
+
+## 完整示例
+
+### 1. 标准 Resource
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\JunTeng\Http\Resources;
+
+use Geekstek\Support\Http\Resources\BaseResource;
+use Illuminate\Http\Request;
+use Knuckles\Scribe\Attributes\ResponseField;
+
+class BillOrderResource extends BaseResource
+{
+    #[ResponseField('id', 'integer', '账单订单ID')]
+    #[ResponseField('bill_name', 'string', '账单名称')]
+    #[ResponseField('renter_name', 'string', '租赁人名称')]
+    #[ResponseField('amount', 'decimal', '金额')]
+    #[ResponseField('status', 'string', '状态')]
+    #[ResponseField('contract_at', 'date', '签约日期')]
+    #[ResponseField('created_at', 'datetime', '创建时间')]
+    #[ResponseField('updated_at', 'datetime', '更新时间')]
+    #[ResponseField('property', 'object', '物业信息')]
+    #[ResponseField('receipt', 'object', '收据信息')]
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'bill_name' => $this->whenAttributeExists('bill_name'),
+            'renter_name' => $this->whenAttributeExists('renter_name'),
+            'amount' => $this->whenAttributeExists('amount'),
+            'status' => $this->whenHasEnumLabel('status'),
+            'contract_at' => $this->whenHasDate('contract_at', 'Y-m-d H:i:s'),
+            'created_at' => $this->whenHasDate('created_at', 'Y-m-d H:i:s'),
+            'updated_at' => $this->whenHasDate('updated_at', 'Y-m-d H:i:s'),
+
+            // 关联资源
+            'property' => $this->includeOne('property', PropertyResource::class),
+            'receipt' => $this->includeOne('receipt', ReceiptResource::class),
+        ];
+    }
+}
+```
+
+### 2. 复杂 Resource（多关系）
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\JunTeng\Http\Resources;
+
+use Geekstek\Support\Http\Resources\BaseResource;
+use Illuminate\Http\Request;
+use Knuckles\Scribe\Attributes\ResponseField;
+
+class BillResource extends BaseResource
+{
+    #[ResponseField('id', 'integer', '账单ID')]
+    #[ResponseField('name', 'string', '账单名称')]
+    #[ResponseField('bill_amount', 'float', '账单金额')]
+    #[ResponseField('status', 'string', '账单状态')]
+    #[ResponseField('bill_date_from', 'string', '账单开始日期')]
+    #[ResponseField('bill_date_to', 'string', '账单结束日期')]
+    #[ResponseField('property', 'object', '物业信息')]
+    #[ResponseField('contract', 'object', '合同信息')]
+    #[ResponseField('bill_orders', 'array', '账单订单')]
+    #[ResponseField('unpaid_bill_orders', 'array', '未支付账单订单')]
+    #[ResponseField('paid_bill_orders', 'array', '已支付账单订单')]
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->whenAttributeExists('name'),
+            'bill_amount' => $this->whenAttributeExists('bill_amount'),
+            'status' => $this->whenHasEnumLabel('status'),
+            'bill_date_from' => $this->whenHasDate('bill_date_from', 'Y-m-d'),
+            'bill_date_to' => $this->whenHasDate('bill_date_to', 'Y-m-d'),
+            'created_at' => $this->whenHasDate('created_at', 'Y-m-d H:i:s'),
+            'updated_at' => $this->whenHasDate('updated_at', 'Y-m-d H:i:s'),
+
+            // 关联资源
+            'property' => $this->includeOne('property', PropertyResource::class),
+            'contract' => $this->includeOne('contract', ContractResource::class),
+            'bill_orders' => $this->includeMany('billOrders', BillOrderResource::class),
+            'unpaid_bill_orders' => $this->includeMany('unpaidBillOrders', BillOrderResource::class),
+            'paid_bill_orders' => $this->includeMany('paidBillOrders', BillOrderResource::class),
+        ];
+    }
+}
+```
+
+### 3. 自定义逻辑 Resource
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\JunTeng\Http\Resources;
+
+use Geekstek\Support\Http\Resources\BaseResource;
+use Illuminate\Http\Request;
+use Knuckles\Scribe\Attributes\ResponseField;
+
+class LeaseAuctionDepositResource extends BaseResource
+{
+    #[ResponseField('id', 'integer', '保证金记录ID')]
+    #[ResponseField('status', 'string', '支付状态')]
+    #[ResponseField('status_label', 'string', '支付状态标签')]
+    #[ResponseField('company_authorization', 'object', '公司授权关系信息')]
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'status' => $this->whenHasEnumLabel('status'),
+            'status_label' => $this->whenHasEnumLabel('status'),
+
+            // 自定义逻辑
+            'company_authorization' => $this->whenLoaded('companyAuthorization', function () {
+                if (! $this->companyAuthorization) {
+                    return null;
+                }
+
+                return [
+                    'id' => $this->companyAuthorization->id,
+                    'company_name' => $this->companyAuthorization->participantCompany?->company_name,
+                    'is_legal_person' => $this->companyAuthorization->is_legal_person,
+                    'status' => $this->companyAuthorization->status?->getLabel(),
+                ];
+            }),
+        ];
+    }
+}
+```
+
+## 在控制器中使用
+
+### 1. 单个资源响应
+
+```php
+public function show(int $id): JsonResource
+{
+    $resource = Model::findOrFail($id);
+    
+    return ResourceClass::make($resource)
+        ->additional([
+            'success' => true,
+            'code' => 200,
+            'message' => '查询成功',
+        ]);
+}
+```
+
+### 2. 集合资源响应
+
+```php
+public function index(): JsonResource
+{
+    $resources = Model::paginate(15);
+    
+    return ResourceClass::collection($resources)
+        ->additional([
+            'success' => true,
+            'code' => 200,
+            'message' => '查询成功',
+        ]);
+}
+```
+
+### 3. 结合 Spatie Query Builder
+
+```php
+use Spatie\QueryBuilder\QueryBuilder;
+
+public function index(): JsonResource
+{
+    $resources = QueryBuilder::for(Model::class)
+        ->allowedFields(['id', 'name', 'created_at'])
+        ->allowedIncludes([
+            'property',
+            'contract',
+            'billOrders',
+        ])
+        ->paginate(15);
+    
+    return ResourceClass::collection($resources)
+        ->additional([
+            'success' => true,
+            'code' => 200,
+            'message' => '查询成功',
+        ]);
+}
+```
+
+## 命名规范
+
+- **Resource 类**: `{ResourceName}Resource`，如 `BillOrderResource`, `UserResource`
+- **命名空间**: `Geekstek\{PackageName}\Http\Resources`
+- **方法**: `toArray(Request $request): array`
+- **字段名**: 使用 snake_case，如 `bill_name`, `created_at`
+
+## 最佳实践
+
+1. **使用 BaseResource**: 优先使用 `BaseResource` 提供的便捷方法
+2. **属性存在检查**: 使用 `whenAttributeExists()` 避免访问不存在的属性
+3. **日期格式化**: 使用 `whenHasDate()` 统一日期格式
+4. **枚举处理**: 使用 `whenHasEnumLabel()` 获取枚举标签
+5. **关联资源**: 使用 `includeOne()` 和 `includeMany()` 处理关联
+6. **文档完整**: 为所有字段添加 `#[ResponseField]` 属性
+7. **类型安全**: 使用严格类型声明和类型提示
+8. **性能优化**: 结合 Spatie Query Builder 的 `allowedIncludes()` 预加载关联

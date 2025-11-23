@@ -1,0 +1,101 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\{PackageName}\Http\Resources;
+
+use Geekstek\Support\Http\Resources\BaseResource;
+use Illuminate\Http\Request;
+use Knuckles\Scribe\Attributes\ResponseField;
+
+class {ResourceName}Resource extends BaseResource
+{
+    #[ResponseField('id', 'integer', '{资源ID}')]
+    // 基础字段
+    // #[ResponseField('name', 'string', '{字段描述}')]
+    // #[ResponseField('description', 'string', '{字段描述}')]
+    // #[ResponseField('amount', 'float', '{字段描述}')]
+    // #[ResponseField('is_active', 'boolean', '{字段描述}')]
+    
+    // 日期字段
+    // #[ResponseField('created_at', 'datetime', '创建时间')]
+    // #[ResponseField('updated_at', 'datetime', '更新时间')]
+    // #[ResponseField('start_at', 'date', '开始日期')]
+    // #[ResponseField('end_at', 'date', '结束日期')]
+    
+    // 枚举字段
+    // #[ResponseField('status', 'string', '状态')]
+    // #[ResponseField('status_label', 'string', '状态标签')]
+    
+    // 关联字段
+    // #[ResponseField('{relation}', 'object', '{关联资源描述}')]
+    // #[ResponseField('{relations}', 'array', '{关联资源集合描述}')]
+    
+    /**
+     * Transform the resource into an array.
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            
+            // 基础字段 - 使用 whenAttributeExists 检查属性是否存在
+            // 'name' => $this->whenAttributeExists('name'),
+            // 'description' => $this->whenAttributeExists('description'),
+            // 'amount' => $this->whenAttributeExists('amount'),
+            // 'is_active' => $this->whenAttributeExists('is_active'),
+            
+            // 日期字段 - 使用 whenHasDate 格式化日期
+            // 'created_at' => $this->whenHasDate('created_at', 'Y-m-d H:i:s'),
+            // 'updated_at' => $this->whenHasDate('updated_at', 'Y-m-d H:i:s'),
+            // 'start_at' => $this->whenHasDate('start_at', 'Y-m-d'),
+            // 'end_at' => $this->whenHasDate('end_at', 'Y-m-d'),
+            // 'contract_at' => $this->whenHasDate('contract_at', 'Y-m-d H:i:s'),
+            
+            // 枚举字段 - 使用 whenHasEnumLabel 获取枚举标签
+            // 'status' => $this->whenHasEnumLabel('status'),
+            // 'status_label' => $this->whenHasEnumLabel('status'),
+            // 'status_value' => $this->whenHasEnumValue('status'),
+            // 'status_meta' => $this->whenHasEnumMeta('status'),
+            
+            // 存储路径转 URL
+            // 'avatar_url' => $this->whenHasStorageUrl('avatar'),
+            // 'image_url' => $this->whenHasStorageUrl('image'),
+            // 'images_urls' => $this->whenHasStorageUrls('images'),
+            
+            // 单关系 - hasOne / belongsTo / hasOneThrough
+            // '{relation}' => $this->includeOne('{relation}', {RelationResource}::class),
+            
+            // 多关系 - hasMany / belongsToMany / hasManyThrough
+            // '{relations}' => $this->includeMany('{relations}', {RelationResource}::class),
+            
+            // 计数 - withCount
+            // '{relation}_count' => $this->includeCount('{relation}'),
+            
+            // 多态单关系 - morphTo
+            // '{relation}' => $this->includeMorphTo('{relation}', [
+            //     \App\Models\{Model}::class => {Resource}::class,
+            //     '{morph_alias}' => {Resource}::class,
+            // ]),
+            
+            // 多态多关系 - morphMany / morphToMany / morphedByMany
+            // '{relations}' => $this->includeMorphMany('{relations}', [
+            //     \App\Models\{Model1}::class => {Resource1}::class,
+            //     \App\Models\{Model2}::class => {Resource2}::class,
+            // ]),
+            
+            // 自定义逻辑示例
+            // '{field}' => $this->whenLoaded('{relation}', function () {
+            //     if (! $this->{relation}) {
+            //         return null;
+            //     }
+            //     
+            //     return [
+            //         'id' => $this->{relation}->id,
+            //         'name' => $this->{relation}->name,
+            //     ];
+            // }),
+        ];
+    }
+}
+

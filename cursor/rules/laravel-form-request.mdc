@@ -1,0 +1,541 @@
+---
+alwaysApply: true
+description: Laravel Data 替代 Form Request 的开发规范和最佳实践
+---
+
+# Laravel Data 替代 Form Request 开发规范
+
+本项目使用 **Spatie Laravel Data 4** 替代传统的 Laravel Form Request，用于数据验证和传输。
+
+## 基础结构规范
+
+**注意**: 请参考 @.cursor/templates/laravel-form-request.php.stub 示例文件
+
+## 核心技术栈
+
+- **Laravel 12** - 主框架
+- **PHP 8.2** - 编程语言（严格类型模式）
+- **Spatie Laravel Data 4** - 数据传输对象和验证
+- **Scribe API Documentation 5** - API 文档生成
+
+## Data 类结构规范
+
+### 1. 基础结构
+
+所有 Data 类必须遵循以下结构：
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\{PackageName}\Data\{SubNamespace};
+
+use Spatie\LaravelData\Attributes\Validation\Required;
+use Spatie\LaravelData\Attributes\Validation\StringType;
+use Spatie\LaravelData\Data;
+
+class {ResourceName}Data extends Data
+{
+    public function __construct(
+        #[Required]
+        #[StringType]
+        public string $field_name,
+        
+        public ?string $optional_field = null,
+    ) {}
+
+    /**
+     * 自定义验证消息
+     */
+    public static function messages(): array
+    {
+        return [
+            'field_name.required' => '字段名不能为空',
+            'field_name.string' => '字段名必须是字符串',
+        ];
+    }
+
+    /**
+     * API文档参数定义
+     */
+    public static function bodyParameters(): array
+    {
+        return [
+            'field_name' => [
+                'description' => '字段描述',
+                'example' => '示例值',
+                'required' => true,
+                'type' => 'string',
+            ],
+        ];
+    }
+}
+```
+
+### 2. 必需的属性和方法
+
+- **严格类型声明**: `declare(strict_types=1);`
+- **继承 Data**: 必须继承 `Spatie\LaravelData\Data`
+- **构造函数**: 定义所有属性
+- **验证方法**: `messages()` 和可选的 `rules()`
+- **文档方法**: `bodyParameters()` 用于 Scribe 文档生成
+
+## 验证方式
+
+### 1. 属性验证（推荐用于简单验证）
+
+使用 Spatie Data 验证属性：
+
+```php
+use Spatie\LaravelData\Attributes\Validation\Required;
+use Spatie\LaravelData\Attributes\Validation\StringType;
+use Spatie\LaravelData\Attributes\Validation\IntegerType;
+use Spatie\LaravelData\Attributes\Validation\BooleanType;
+use Spatie\LaravelData\Attributes\Validation\ArrayType;
+use Spatie\LaravelData\Attributes\Validation\Nullable;
+
+public function __construct(
+    #[Required]
+    #[StringType]
+    public string $name,
+    
+    #[Nullable]
+    #[StringType]
+    public ?string $description = null,
+    
+    #[Required]
+    #[IntegerType]
+    public int $age,
+    
+    #[Required]
+    #[BooleanType]
+    public bool $is_active,
+    
+    #[Required]
+    #[ArrayType]
+    public array $items,
+) {}
+```
+
+### 2. rules() 方法验证（推荐用于复杂验证）
+
+使用 `rules()` 方法定义复杂验证规则：
+
+```php
+public static function rules(): array
+{
+    return [
+        'internal_order_no' => ['required', 'string', 'max:32', 'regex:/^[0-9A-Za-z_\-\*]+$/'],
+        'description' => 'required|string|max:127',
+        'amount' => 'required|array',
+        'amount.total' => 'required|min:0.01|decimal:0,2',
+        'amount.currency' => 'required|string|max:16|in:CNY',
+        'payer' => 'required|array',
+        'payer.openid' => 'required|string|max:128',
+        'detail.goods_detail.*.merchant_goods_id' => 'required|string|max:32',
+    ];
+}
+```
+
+### 3. 混合使用
+
+可以同时使用属性验证和 `rules()` 方法：
+
+```php
+public function __construct(
+    #[Required]
+    #[StringType]
+    public string $js_code,
+) {}
+
+public static function rules(): array
+{
+    return [
+        'js_code' => ['required', 'string', 'max:255'],
+    ];
+}
+```
+
+## 数据映射规范
+
+### 1. 输入输出映射
+
+使用 SnakeCase 映射器自动转换字段名：
+
+```php
+use Spatie\LaravelData\Attributes\MapInputName;
+use Spatie\LaravelData\Attributes\MapOutputName;
+use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+
+#[MapInputName(SnakeCaseMapper::class)]
+#[MapOutputName(SnakeCaseMapper::class)]
+class PaymentData extends Data
+{
+    public function __construct(
+        public string $internalOrderNo,  // 输入: internal_order_no, 输出: internal_order_no
+    ) {}
+}
+```
+
+### 2. 字段映射
+
+使用 `#[MapOutputName]` 自定义输出字段名：
+
+```php
+use Spatie\LaravelData\Attributes\MapOutputName;
+
+public function __construct(
+    #[MapOutputName('out_trade_no')]
+    public string $internalOrderNo,  // 输出: out_trade_no
+) {}
+```
+
+## 可选字段处理
+
+### 1. 可空类型
+
+```php
+public function __construct(
+    public string $required_field,
+    public ?string $optional_field = null,
+) {}
+```
+
+### 2. Optional 类型
+
+```php
+use Spatie\LaravelData\Optional;
+
+public function __construct(
+    public string $required_field,
+    public string | Optional $optional_field,
+) {}
+```
+
+### 3. 默认值
+
+```php
+public function __construct(
+    public string $name,
+    public string $status = 'active',
+    public ?string $description = null,
+) {}
+```
+
+## 构造函数逻辑
+
+### 1. 数据转换
+
+在构造函数中进行数据转换：
+
+```php
+public function __construct(
+    public array $amount,
+) {
+    // 金额转换为分（整数）
+    $this->amount['total'] = (int) ($amount['total'] * 100);
+}
+```
+
+### 2. 默认值设置
+
+```php
+use Illuminate\Support\Carbon;
+
+public function __construct(
+    public ?string $timeExpire,
+) {
+    if (! isset($this->timeExpire)) {
+        $now = Carbon::now();
+        $expirationTime = $now->addMinutes(30);
+        $this->timeExpire = $expirationTime->toRfc3339String();
+    }
+}
+```
+
+### 3. 嵌套数据转换
+
+```php
+public function __construct(
+    public ?array $detail,
+) {
+    if (isset($this->detail['cost_price'])) {
+        $this->detail['cost_price'] = (int) ($this->detail['cost_price'] * 100);
+    }
+
+    if (isset($this->detail['goods_detail'])) {
+        foreach ($this->detail['goods_detail'] as &$goods) {
+            if (isset($goods['unit_price'])) {
+                $goods['unit_price'] = (int) ($goods['unit_price'] * 100);
+            }
+        }
+    }
+}
+```
+
+## 验证规则规范
+
+### 1. 字符串验证
+
+```php
+public static function rules(): array
+{
+    return [
+        'name' => ['required', 'string', 'max:255'],
+        'description' => 'nullable|string|max:1000',
+        'code' => ['required', 'string', 'regex:/^[0-9A-Za-z_\-\*]+$/'],
+    ];
+}
+```
+
+### 2. 数字验证
+
+```php
+public static function rules(): array
+{
+    return [
+        'id' => ['required', 'integer', 'min:1'],
+        'amount' => ['required', 'min:0.01', 'decimal:0,2'],
+        'total' => ['required', 'numeric', 'min:0'],
+    ];
+}
+```
+
+### 3. 数组验证
+
+```php
+public static function rules(): array
+{
+    return [
+        'items' => ['required', 'array', 'min:1'],
+        'items.*' => ['required', 'string'],
+        'amount' => 'required|array',
+        'amount.total' => 'required|min:0.01|decimal:0,2',
+        'amount.currency' => 'required|string|in:CNY',
+        'detail.goods_detail.*.merchant_goods_id' => 'required|string|max:32',
+    ];
+}
+```
+
+### 4. 条件验证
+
+```php
+public static function rules(): array
+{
+    return [
+        'type' => ['required', 'in:individual,company'],
+        'individual_name' => ['nullable', 'string', 'required_if:type,individual'],
+        'company_name' => ['nullable', 'string', 'required_if:type,company'],
+        'scene_info.payer_client_ip' => 'required_with:scene_info|string|max:45',
+        'scene_info.store_info.id' => 'required_if:scene_info.store_info,!=,null|string|max:32',
+    ];
+}
+```
+
+### 5. 存在性验证
+
+```php
+use Illuminate\Validation\Rule;
+
+public static function rules(): array
+{
+    return [
+        'platform_transaction_id' => [
+            'required_without:internal_order_no',
+            'nullable',
+            'string',
+            'max:32',
+            Rule::exists('payt_payment_logs', 'platform_transaction_id')
+                ->whereNotNull('platform_transaction_id'),
+        ],
+    ];
+}
+```
+
+## 错误消息规范
+
+### 1. 自定义验证消息
+
+```php
+public static function messages(): array
+{
+    return [
+        'js_code.required' => '登录凭证不能为空',
+        'js_code.string' => '登录凭证必须是字符串',
+        'encrypted_data.required' => '加密数据不能为空',
+        'internal_order_no.regex' => '只能是数字、大小写字母 _ - *',
+    ];
+}
+```
+
+### 2. 字段名映射
+
+确保验证消息中的字段名与实际的字段名一致（考虑 snake_case 映射）。
+
+## API 文档规范
+
+### 1. bodyParameters() 方法
+
+为 Scribe 文档生成提供参数定义：
+
+```php
+public static function bodyParameters(): array
+{
+    return [
+        'js_code' => [
+            'description' => '登录凭证 code, 通过wx.login获取',
+            'example' => 'JSCODE',
+            'required' => true,
+            'type' => 'string',
+        ],
+        'encrypted_data' => [
+            'description' => '微信小程序用户信息的加密数据',
+            'example' => 'ENCRYPTED_DATA',
+            'required' => true,
+            'type' => 'string',
+        ],
+        'iv' => [
+            'description' => '微信小程序用户信息的初始向量',
+            'example' => 'IV',
+            'required' => true,
+            'type' => 'string',
+        ],
+    ];
+}
+```
+
+### 2. 属性注释
+
+使用 PHPDoc 注释提供字段描述：
+
+```php
+public function __construct(
+    /**
+     * 登录凭证 code, 通过wx.login获取
+     */
+    #[Required]
+    #[StringType]
+    public string $js_code,
+) {}
+```
+
+## 自定义方法
+
+### 1. 设置方法
+
+```php
+private string $notifyUrl = '';
+
+public function setNotifyUrl(string $notifyUrl): self
+{
+    $this->notifyUrl = $notifyUrl;
+
+    return $this;
+}
+```
+
+### 2. 重写 toArray()
+
+```php
+public function toArray(): array
+{
+    $data = parent::toArray();
+
+    return array_merge($data, ['notify_url' => $this->notifyUrl]);
+}
+```
+
+### 3. 静态工厂方法
+
+```php
+public static function make(
+    string $templateId,
+    array $templateData,
+    ?string $page = null,
+): static {
+    return new static(
+        template_id: $templateId,
+        data: $templateData,
+        page: $page ?? 'index',
+    );
+}
+```
+
+### 4. 验证方法
+
+```php
+public static function validateTemplateData(array $data): bool
+{
+    foreach ($data as $key => $value) {
+        if (! preg_match('/^(thing|phrase|character_string)\d+$/', $key)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+```
+
+## 接口实现
+
+### 1. 实现接口
+
+```php
+use Geekstek\Payment\Dto\WeChatPay\Contracts\Prepay;
+
+class MiniProgramData extends Data implements Prepay
+{
+    public function setNotifyUrl(string $notifyUrl): self
+    {
+        // 实现
+    }
+
+    public function toArray(): array
+    {
+        // 实现
+    }
+}
+```
+
+## 在控制器中使用
+
+### 1. 方法参数注入
+
+```php
+public function getTokenByJsCode(
+    JsCodeData $data,
+    JsCode2SessionAction $jsCode2SessionAction
+) {
+    // $data 已经通过验证
+    // 可以直接使用 $data->js_code
+}
+```
+
+### 2. 数据访问
+
+```php
+$frontendSlug = request()->header('X-Frontend-Slug');
+
+$platformUser = $jsCode2SessionAction->execute(
+    frontendSlug: $frontendSlug,
+    data: $data,  // 直接传递 Data 对象
+);
+```
+
+## 命名规范
+
+- **Data 类**: `{ResourceName}Data`，如 `JsCodeData`, `UserInfoData`
+- **命名空间**: `Geekstek\{PackageName}\Data\{SubNamespace}`
+- **属性**: 使用 camelCase，如 `internalOrderNo`, `jsCode`
+- **验证规则键**: 使用 snake_case，如 `internal_order_no`, `js_code`
+
+## 最佳实践
+
+1. **简单验证使用属性**：对于简单的必填、类型验证，使用验证属性
+2. **复杂验证使用 rules()**：对于复杂的条件验证、存在性验证，使用 `rules()` 方法
+3. **数据转换在构造函数**：在构造函数中进行数据转换和默认值设置
+4. **文档方法必须实现**：实现 `bodyParameters()` 方法以生成完整的 API 文档
+5. **错误消息中文化**：所有验证错误消息使用中文
+6. **类型安全**：使用严格类型声明和类型提示
+7. **可选字段明确**：使用 `?` 或 `Optional` 明确标识可选字段

@@ -20,6 +20,9 @@
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-4-resource-form.mdc: Filament 4 Resources Form 开发规范
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-import.mdc: Filament Resource Import 开发规范
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-export.mdc: Filament Resource Export 开发规范
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-api.mdc: Laravel API 控制器开发规范和最佳实践
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-form-request.mdc: Laravel Data 替代 Form Request 的开发规范和最佳实践
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-api-resource.mdc: Laravel API Resource 开发规范和最佳实践
 
 ## 代码模板
 
@@ -39,3 +42,6 @@
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/templates/filament-resource-view-page.php.stub: Filament Resource ViewRecord类
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/templates/filament-resource-import.php.stub: Filament Resource Importer类
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/templates/filament-resource-export.php.stub: Filament Resource Exporter类
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/templates/laravel-api.php.stub: Laravel API Controller 类
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/templates/laravel-form-request.php.stub: Laravel Data类
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/templates/laravel-api-resource.php.stub: Laravel API Resource类

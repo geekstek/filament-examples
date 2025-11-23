@@ -1,0 +1,170 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\{PackageName}\Data\{SubNamespace};
+
+use Spatie\LaravelData\Attributes\Validation\Required;
+use Spatie\LaravelData\Attributes\Validation\StringType;
+use Spatie\LaravelData\Attributes\Validation\IntegerType;
+use Spatie\LaravelData\Attributes\Validation\BooleanType;
+use Spatie\LaravelData\Attributes\Validation\ArrayType;
+use Spatie\LaravelData\Attributes\Validation\Nullable;
+use Spatie\LaravelData\Attributes\MapInputName;
+use Spatie\LaravelData\Attributes\MapOutputName;
+use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\LaravelData\Optional;
+
+/**
+ * {资源名称}数据传输对象
+ *
+ * {详细描述用途}
+ */
+// 需要数据映射时取消注释
+// #[MapInputName(SnakeCaseMapper::class)]
+// #[MapOutputName(SnakeCaseMapper::class)]
+class {ResourceName}Data extends Data
+{
+    public function __construct(
+        /**
+         * {字段描述}
+         */
+        #[Required]
+        #[StringType]
+        public string ${fieldName},
+
+        /**
+         * {可选字段描述}
+         */
+        // 使用可空类型
+        // #[Nullable]
+        // #[StringType]
+        // public ?string ${optionalField} = null,
+
+        // 使用 Optional 类型
+        // public string | Optional ${optionalField},
+
+        // 整数类型
+        // #[Required]
+        // #[IntegerType]
+        // public int ${integerField},
+
+        // 布尔类型
+        // #[Required]
+        // #[BooleanType]
+        // public bool ${booleanField},
+
+        // 数组类型
+        // #[Required]
+        // #[ArrayType]
+        // public array ${arrayField},
+    ) {
+        // 数据转换示例
+        // $this->amount['total'] = (int) (${amount}['total'] * 100);
+
+        // 默认值设置示例
+        // if (! isset($this->timeExpire)) {
+        //     $now = Carbon::now();
+        //     $expirationTime = $now->addMinutes(30);
+        //     $this->timeExpire = $expirationTime->toRfc3339String();
+        // }
+
+        // 嵌套数据转换示例
+        // if (isset($this->detail['cost_price'])) {
+        //     $this->detail['cost_price'] = (int) ($this->detail['cost_price'] * 100);
+        // }
+    }
+
+    /**
+     * 自定义验证消息
+     */
+    public static function messages(): array
+    {
+        return [
+            '{field_name}.required' => '{字段名}不能为空',
+            '{field_name}.string' => '{字段名}必须是字符串',
+            // 更多自定义消息...
+        ];
+    }
+
+    /**
+     * 验证规则
+     * 
+     * 当使用属性验证时，此方法可选
+     * 当需要复杂验证时，必须实现此方法
+     */
+    public static function rules(): array
+    {
+        return [
+            '{field_name}' => ['required', 'string', 'max:255'],
+            // 'internal_order_no' => ['required', 'string', 'max:32', 'regex:/^[0-9A-Za-z_\-\*]+$/'],
+            // 'amount' => 'required|array',
+            // 'amount.total' => 'required|min:0.01|decimal:0,2',
+            // 'amount.currency' => 'required|string|max:16|in:CNY',
+            // 'payer.openid' => 'required|string|max:128',
+            // 'detail.goods_detail.*.merchant_goods_id' => 'required|string|max:32',
+            // 'scene_info.payer_client_ip' => 'required_with:scene_info|string|max:45',
+            // 'type' => ['required', 'in:individual,company'],
+            // 'individual_name' => ['nullable', 'string', 'required_if:type,individual'],
+        ];
+    }
+
+    /**
+     * API文档参数定义
+     * 
+     * 用于 Scribe 文档生成
+     */
+    public static function bodyParameters(): array
+    {
+        return [
+            '{field_name}' => [
+                'description' => '{字段描述}',
+                'example' => '{示例值}',
+                'required' => true,
+                'type' => 'string',
+            ],
+            // 更多参数定义...
+        ];
+    }
+
+    // 自定义方法示例
+
+    // /**
+    //  * 设置通知URL
+    //  */
+    // private string $notifyUrl = '';
+
+    // public function setNotifyUrl(string $notifyUrl): self
+    // {
+    //     $this->notifyUrl = $notifyUrl;
+
+    //     return $this;
+    // }
+
+    // /**
+    //  * 重写 toArray() 方法
+    //  */
+    // public function toArray(): array
+    // {
+    //     $data = parent::toArray();
+
+    //     return array_merge($data, ['notify_url' => $this->notifyUrl]);
+    // }
+
+    // /**
+    //  * 静态工厂方法
+    //  */
+    // public static function make(
+    //     string ${param1},
+    //     array ${param2},
+    //     ?string ${param3} = null,
+    // ): static {
+    //     return new static(
+    //         ${param1}: ${param1},
+    //         ${param2}: ${param2},
+    //         ${param3}: ${param3} ?? 'default',
+    //     );
+    // }
+}
+

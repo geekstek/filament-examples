@@ -1,0 +1,138 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\{PackageName}\Http\Controllers\Api\{SubNamespace};
+
+use Exception;
+use Geekstek\ApiLog\Http\Middleware\LogClientRequests;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Knuckles\Scribe\Attributes\Authenticated;
+use Knuckles\Scribe\Attributes\Endpoint as ScribeEndpoint;
+use Knuckles\Scribe\Attributes\Group as ScribeGroup;
+use Knuckles\Scribe\Attributes\Header;
+use Knuckles\Scribe\Attributes\Response;
+use Knuckles\Scribe\Attributes\ResponseFromApiResource;
+use Knuckles\Scribe\Attributes\Subgroup as ScribeSubgroup;
+use Spatie\RouteAttributes\Attributes\Get;
+use Spatie\RouteAttributes\Attributes\Post;
+use Spatie\RouteAttributes\Attributes\Group as RouteGroup;
+use Spatie\RouteAttributes\Attributes\Middleware;
+
+#[RouteGroup(
+    prefix: 'api/{module-slug}',
+    as: 'api.{module-slug}.'
+)]
+#[Middleware([
+    'api',
+    LogClientRequests::class,
+    // 根据需要添加认证中间件
+    // 'auth:uacl,platform',
+    // 'auth:sanctum',
+    // 需要前端 Slug 验证时取消注释
+    // ValidateFrontendSlug::class,
+])]
+#[ScribeEndpoint(
+    title: '',
+    description: <<<'DESC'
+        {业务描述}
+    DESC,
+)]
+#[ScribeGroup(name: '{模块名}')]
+#[ScribeSubgroup(name: '{功能名}')]
+// 需要认证的接口取消注释
+// #[Authenticated]
+class {ControllerName}Controller extends Controller
+{
+    // 使用依赖注入替代 app() 辅助函数
+    public function __construct(
+        // protected {ServiceName}Service ${serviceName}Service,
+    ) {}
+
+    /**
+     * {方法描述}
+     *
+     * {详细说明，可包含外部链接}
+     */
+    #[Post(
+        uri: '{resource-uri}',
+        name: '{resource-name}',
+        middleware: [
+            // 方法级中间件，如需要认证
+            // 'auth:uacl,platform',
+        ],
+    )]
+    // 需要认证的接口取消注释
+    // #[Authenticated]
+    // 需要前端 Slug 验证的接口取消注释
+    // #[Header(name: 'X-Frontend-Slug', example: 'geekstek')]
+    // 使用 Resource 响应时取消注释
+    // #[ResponseFromApiResource(
+    //     name: {ResourceClass}::class,
+    //     model: {ModelClass}::class,
+    // )]
+    // 使用直接 JSON 响应时取消注释
+    // #[Response(
+    //     content: [
+    //         'data' => [],
+    //         'success' => true,
+    //         'code' => 200,
+    //         'message' => '{操作成功}',
+    //     ],
+    //     status: 200,
+    //     description: '{操作成功}',
+    // )]
+    public function {methodName}(
+        // {DataClass} $data,
+        // {ActionClass} ${actionName}Action,
+    ): JsonResource | JsonResponse {
+        try {
+            // 获取认证用户（如需要）
+            // $authUser = Auth::user();
+            
+            // 获取前端 Slug（如需要）
+            // $frontendSlug = request()->header('X-Frontend-Slug');
+
+            // 使用 Action 模式处理业务逻辑
+            // $result = ${actionName}Action->execute(
+            //     authUser: $authUser,
+            //     frontendSlug: $frontendSlug,
+            //     data: $data,
+            // );
+
+            // 使用 Service 模式处理业务逻辑
+            // $result = $this->{serviceName}Service->{methodName}(
+            //     // 参数
+            // );
+
+            // 使用 Resource 响应
+            // return {ResourceClass}::make($result)
+            //     ->additional([
+            //         'success' => true,
+            //         'code' => 0,
+            //         'message' => '{操作成功}',
+            //     ]);
+
+            // 使用直接 JSON 响应
+            return response()->json([
+                'data' => [],
+                'success' => true,
+                'code' => 0,
+                'message' => '{操作成功}',
+            ]);
+        } catch (Exception $e) {
+            Log::error('{操作失败}：' . $e->getMessage());
+
+            return response()->json([
+                'message' => '{操作失败}：' . $e->getMessage(),
+                'success' => false,
+                'code' => 500,
+            ]);
+        }
+    }
+}
+
