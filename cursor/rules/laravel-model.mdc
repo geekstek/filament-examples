@@ -20,20 +20,49 @@ namespace Geekstek\Administrative\Models;
 
 // 导入语句按以下顺序排列：
 // 1. 枚举类
-// 2. 外部服务类
-// 3. 其他模型类
-// 4. Laravel 核心类
-// 5. 第三方包类
+// 2. 策略类 (Policy)
+// 3. 外部服务类
+// 4. 其他模型类
+// 5. Laravel 核心类 (包含 Attributes)
+// 6. 第三方包类
 use Geekstek\Administrative\Enums\EmployeeContractStatus;
+use Geekstek\Administrative\Policies\EmployeeProfilePolicy;
 use Geekstek\Support\Services\StorageService;
 use Geekstek\Uacl\Models\User;
 use Geekstek\Uacl\Traits\Companyable;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\QueryBuilder\AllowedFilter;
 ```
 
-### 2. 类声明和 Trait 使用
+### 2. 策略绑定 (Policy Binding)
+
+使用 `#[UsePolicy]` 属性将策略类直接绑定到模型，这是 Laravel 11+ 推荐的方式，无需在 `AuthServiceProvider` 中手动注册。
+
 ```php
+use Geekstek\Administrative\Policies\EmployeeProfilePolicy;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
+
+#[UsePolicy(EmployeeProfilePolicy::class)]
+class EmployeeProfile extends Model
+{
+    // ...
+}
+```
+
+**优势**：
+- 策略与模型的关联更加直观，代码即文档
+- 无需在 `AuthServiceProvider` 中维护 `$policies` 数组
+- 支持 IDE 自动跳转和重构
+- 遵循 Laravel 12 的声明式编程风格
+
+**策略类命名规范**：
+- 策略类名：`{ModelName}Policy`，如 `EmployeeProfilePolicy`
+- 策略类路径：`Geekstek\{PackageName}\Policies\{ModelName}Policy`
+
+### 3. 类声明和 Trait 使用
+```php
+#[UsePolicy(EmployeeProfilePolicy::class)]
 class EmployeeProfile extends Model
 {
     // Trait 使用顺序：
