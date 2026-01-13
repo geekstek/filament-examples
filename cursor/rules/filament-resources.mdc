@@ -8,6 +8,21 @@ alwaysApply: true
 
 基于 模块包中的 Filament 组件分析，总结出以下 Filament Resource 开发的最佳实践和规范。
 
+## 规则
+
+- 避免生成不必要的页面：在生成 Filament 资源时，除非有明确指示，否则不要生成查看页面（View page）或信息列表（Infolist）。
+- 路由引用：在引用 Filament 路由时，应尽量使用 getUrl() 方法，而不是 Laravel 的 route() 辅助函数。例如，使用 ClassScheduleResource::getUrl('index')，而不是 route('filament.admin.resources.class-schedules.index')。此外，请指定确切的资源类名，而不是使用 getResource()。
+- Pest 测试语法：在使用 Pest 编写测试时，请使用 Livewire::test(class) 语法，而不要使用 livewire(class)，以避免对 pestphp/pest-plugin-livewire 产生额外的依赖。
+- 枚举（Enum）的使用与接口：当在 Eloquent 模型字段中使用枚举类时，如果尚未添加，请实现 HasLabel、HasColor 和 HasIcon 接口，而不是在 Filament 表单（Forms）/表格（Tables）中手动指定值、标签、颜色或图标。
+    - 关键事项：必须始终使用接口定义中的确切返回类型声明——切勿替换为特定类型（例如：getIcon() 应使用 string|BackedEnum|Htmlable|null，而不是 string|Heroicon|null）。
+    - 在使用枚举定义默认值时，切勿添加 ->value。
+    - 请参考此文档页面：https://filamentphp.com/docs/4.x/advanced/enums
+- 优先使用枚举对象：只要存在枚举类，请始终尽可能使用枚举对象而不是硬编码的字符串值。例如，在测试中创建数据时，如果字段被转换（cast）为枚举，则应使用该枚举对象，而不是硬编码的字符串。
+- 图标的使用：在添加图标时，始终使用 Filament 枚举类 Filament\Support\Icons\Heroicon，而不是使用字符串。
+- 操作授权：在添加需要授权的操作（actions）时，请在操作对象上使用 ->authorize('ability') 方法，而不是手动调用 Gate::authorize() 或检查 Gate::allows()。authorize() 方法会自动处理授权强制执行以及操作的可见性。
+- 唯一性验证默认值：在 Filament v4 中，验证规则 unique() 默认已包含 ignoreRecord: true，因此无需额外指定它。
+- 自定义 Blade 与 Tailwind：在 Filament v4 中，如果您创建了包含 Tailwind 类名的自定义 Blade 文件，则需要创建一个自定义主题（custom theme），并在 theme.css 中指定这些 Blade 文件的所在目录。
+
 ## 目录结构规范
 
 ### 1. Resource 目录组织

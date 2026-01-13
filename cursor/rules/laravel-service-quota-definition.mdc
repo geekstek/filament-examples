@@ -1,0 +1,197 @@
+---
+description: QuotaService 定义
+globs:
+  - "src/Services/**/*Service.php"
+alwaysApply: true
+---
+
+# QuotaService 定义
+
+# 目的
+
+文件的內容、目標和範圍
+
+`QuotaService`（配额服务）在系统中的定位专注于 **“资源量的管理与控制”**。
+
+它解决的核心问题是：**“剩多少？”** 和 **“够不够？”**。
+
+它通常用于处理**有限资源**的分配，例如：
+
+- 员工年假余额。
+- 优惠券/秒杀库存。
+- API 每日调用次数限制。
+- SaaS 系统的席位/存储空间限制。
+
+### 1. 核心职责
+
+1. **计算余额 (Calculation)**：根据总额和已用量，算出剩余量。
+2. **可用性检查 (Availability Check)**：在执行 Action 前，判断“扣减量”是否超出“剩余量”。
+3. **并发控制 (Concurrency Control)**：(进阶) 处理高并发下的超卖问题（如 Redis 原子锁）。
+
+### 2. 基础写法：请假余额检查（查库模式）
+
+这是最典型的场景。Action 准备写数据前，先问 QuotaService 余额够不够。
+
+**写法规范：**
+
+- **方法名**：通常用 ensureEnough (推荐，语义最强), checkAvailability, hasSufficientBalance。
+- **行为**：如果不通过，直接抛出业务异常（阻断 Action）。
+
+```php
+namespace App\Services\Leaves;
+
+use App\Models\User;
+use App\Exceptions\QuotaExceededException;
+
+class LeaveQuotaService
+{
+    /**
+     * 确保余额充足
+     * @throws QuotaExceededException
+     */
+    public function ensureEnough(User $user, string $leaveType, float $days): void
+    {
+        // 1. 获取该类型的总额度 (可能来自配置表或 User 字段)
+        $total = $this->getTotalQuota($user, $leaveType);
+
+        // 2. 获取已用额度 (可能需要实时统计申请单，或者查缓存)
+        $used = $this->getUsedQuota($user, $leaveType);
+
+        // 3. 计算剩余
+        $remaining = $total - $used;
+
+        // 4. 判断
+        if ($remaining < $days) {
+            throw new QuotaExceededException(
+                "额度不足，当前剩余 {$remaining} 天，申请需要 {$days} 天。"
+            );
+        }
+    }
+
+    /**
+     * 获取剩余可用额度（供前端展示或内部计算用）
+     */
+    public function getRemainingBalance(User $user, string $leaveType): float
+    {
+        return $this->getTotalQuota($user, $leaveType) - $this->getUsedQuota($user, $leaveType);
+    }
+
+    // --- 内部辅助方法 ---
+
+    protected function getTotalQuota(User $user, string $type): float
+    {
+        // 模拟逻辑：年假根据工龄算，病假固定 10 天
+        return $type === 'annual' ? $user->seniority * 5 : 10.0;
+    }
+
+    protected function getUsedQuota(User $user, string $type): float
+    {
+        // 统计今年“已批准”或“审批中”的天数
+        return $user->leaveRequests()
+            ->whereYear('start_date', now()->year)
+            ->where('type', $type)
+            ->whereIn('status', ['approved', 'pending']) // 重点：把审批中的也算进去，防止超额申请
+            ->sum('days');
+    }
+}
+```
+
+### 3. 进阶写法：高并发库存/限流（Redis 模式）
+
+在秒杀或 API 限流场景下，查数据库太慢，QuotaService 通常会封装 **Redis** 的操作。
+
+注意：虽然 Service 一般不修改数据库状态，但 **操作 Redis 原子计数器** 被视为“计算/能力”的一种，是可以放在 Service 里的。
+
+```php
+namespace App\Services\Marketing;
+
+use Illuminate\Support\Facades\Redis;
+use App\Exceptions\BusinessException;
+
+class CouponQuotaService
+{
+    /**
+     * 尝试预占库存（原子操作）
+     * 适用于：秒杀、抢券
+     */
+    public function tryReserve(string $couponId): bool
+    {
+        $key = "coupon_stock:{$couponId}";
+        
+        // Lua 脚本保证原子性：如果大于0则减1，否则返回失败
+        // 或者使用 Laravel 的 decrement 配合判断
+        
+        // 简单实现示例：
+        $stock = Redis::get($key);
+        
+        if ($stock <= 0) {
+            return false; 
+        }
+
+        // 注意：这里有并发风险，生产环境建议用 decr 或 Lua
+        Redis::decr($key);
+        return true;
+    }
+
+    /**
+     * 严格检查并抛出异常
+     */
+    public function ensureStockAvailable(string $couponId): void
+    {
+        if (! $this->tryReserve($couponId)) {
+            throw new BusinessException("该优惠券已被抢光");
+        }
+    }
+}
+```
+
+### 4. QuotaService 在 Action 中的使用
+
+Action 负责“编排”。它先调用 QuotaService 确保资源足够，然后执行具体的扣减或创建记录。
+
+```php
+class ApplyLeaveAction
+{
+    public function __construct(
+        protected LeaveQuotaService $quotaService,
+        protected LeaveRepository $repo
+    ) {}
+
+    public function handle(User $user, LeaveData $data)
+    {
+        // 1. 配额检查 (Service 层)
+        // 这一步只是检查，不修改数据库，如果不足直接炸异常
+        $this->quotaService->ensureEnough($user, $data->type, $data->days);
+
+        // 2. 核心业务 (写库)
+        DB::transaction(function() use ($user, $data) {
+            // 创建请假单
+            $this->repo->create($user, $data);
+            
+            // 3. 只有在某些设计里，才需要显式扣减余额字段
+            // 如果是“实时计算”模式，甚至不需要这一步
+            // $user->decrement('annual_leave_balance', $data->days);
+        });
+    }
+}
+```
+
+### 5. QuotaService 与 PolicyService 的区别
+
+这是一个容易混淆的点：
+
+| **维度** | **PolicyService (规则)** | **QuotaService (配额)** |
+| --- | --- | --- |
+| **关注点** | **资格 (Eligibility)** | **数量 (Quantity)** |
+| **典型问题** | “试用期员工允许请年假吗？” | “你的年假余额还剩几天？” |
+| **逻辑类型** | 布尔逻辑 (Yes/No) | 数学运算 (+/-) |
+| **依赖** | 状态字段 (Status, Type) | 统计数据 (Sum, Count, Redis) |
+
+### 6. 总结
+
+1. **只读与预判**：QuotaService 的主要目的是在事情发生前，告诉你“资源够不够”。
+2. **封装复杂性**：把“怎么算余额”（要不要扣除冻结的？要不要算上上个月结转的？）封装在 Service 内部，Action 只要一个结果。
+3. **命名习惯**：
+    - `ensureEnough(...)`
+    - `getRemaining(...)`
+    - `checkLimit(...)`

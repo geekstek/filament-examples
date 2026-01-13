@@ -1,0 +1,209 @@
+---
+description: Action 和 Service 架构分层与职责规范
+globs:
+  - "src/Actions/**/*Action.php"
+  - "src/Services/**/*Service.php"
+alwaysApply: true
+---
+
+# Action 和 Service 架构分层与职责规范
+
+# **1. 核心定义与设计哲学**
+
+## **1.1 总体原则**
+
+- **Action (业务命令)**：是业务的**入口与编排者**。它代表用户的“业务意图”，负责协调资源，**关注“发生了什么”**。
+- **Service (领域能力)**：是**可复用、可组合的能力提供者**。它代表系统的“计算与规则”，负责具体逻辑，**关注“怎么做/规则是什么”**。
+
+## **1.2 决策矩阵 (Decision Matrix)**
+
+| **维度** | **Action** | **Service** |
+| --- | --- | --- |
+| **语义** | 业务命令 (Command) | 能力/规则/计算 (Capability) |
+| **生命周期** | 从发起到结束 (一次性) | 持续存在的无状态能力 |
+| **事务管理** | **必须负责** (开启/提交/回滚) | **严禁**开启事务 |
+| **权限校验** | **必须负责** (Can I do this?) | **严禁**包含权限逻辑 |
+| **副作用** | 修改多个聚合/表，触发 Event | 纯计算，或单一的数据查询/同步 |
+| **复用性** | 极低 (通常作为 API/CLI/Filament 唯一入口) | **高** (被多个 Action 复用) |
+| **体量建议** | 50 ~ 150 行 | 20 ~ 100 行 |
+
+# **2. Action 开发规范**
+
+## **2.1 职责边界 (Must Do)**
+
+Action 是业务逻辑的**唯一写操作入口**，必须包含以下逻辑：
+
+1. **权限与状态前置校验**：决定“能不能做”。
+2. **事务边界管理**：使用 `DB::transaction` 包裹核心逻辑。
+3. **编排调用**：调用多个 Service 完成具体计算或数据处理。
+4. **触发领域事件 (Domain Events)**：如 `LeaveApplied`。
+5. **返回结果**：返回 DTO 或 ID，**严禁**对返回的 Model 再次执行写操作。
+
+## 2.2 命名规范
+
+- **结构**：`<Verb><BusinessObject>Action`
+- **强制动词**：
+    - 创建类：`Apply`, `Create`, `Register`, `Generate`
+    - 变更类：`Approve`, `Reject`, `Cancel`, `Transfer`, `Correct`
+    - 状态类：`Lock`, `Unlock`, `Close`, `Archive`
+- **示例**：
+    - ✅ `ApplyLeaveAction` (申请请假)
+    - ✅ `ApproveLeaveAction` (批准请假)
+
+## 2.3 代码实现标准
+
+- **统一入口**：仅暴露 `handle()` 方法。
+- **依赖注入**：通过构造函数注入 Service，禁止使用静态方法调用 Service。
+- **返回值**：推荐返回 `void`、`bool`、`DTO` 或 `只读 Model`。
+
+```bash
+class ApplyLeaveAction {
+    public function __construct(
+        protected LeaveQuotaService $quotaService, // 注入能力
+        protected LeaveRepository $repo
+    ) {}
+
+    public function handle(User $user, ApplyLeaveData $data): LeaveRequest {
+        // 1. 权限与规则校验
+        $this->authorize('apply', LeaveRequest::class);
+        $this->quotaService->ensureEnough($user, $data->type);
+
+        // 2. 事务编排
+        return DB::transaction(function () use ($user, $data) {
+            $leave = $this->repo->create($user, $data);
+            
+            // 3. 触发事件
+            event(new LeaveApplied($leave));
+            
+            return $leave; // 返回只读实例
+        });
+    }
+}
+```
+
+# **3. Service 开发规范**
+
+## 3.1 职责边界 (Must Do)
+
+Service 是**无副作用或低副作用**的工具箱，专注于单一职责：
+
+1. **纯计算逻辑**：如计算天数、金额。
+2. **校验规则**：如检查配额、库存（只读）。
+3. **数据聚合/查询**：复杂的跨表查询。
+4. **外部系统交互**：第三方 API 同步。
+
+## 3.2 禁止事项 (Never Do)
+
+- ❌ **禁止开启事务**。
+- ❌ **禁止修改多个聚合根**。
+- ❌ **禁止触发 Domain Event**。
+- ❌ **禁止包含权限判断** (Gate/Policy)。
+- ❌ **禁止动词**：`Handle`, `Process`, `Execute` (这些是 Action 的词)。
+
+## 3.3 命名规范
+
+- **结构**：`<BusinessObject><Capability>Service`
+- **后缀词表**：
+    - 规则：`PolicyService` - 不是“判断你是谁（权限/Authorization）”，而是**“判断当前状态允不允许做这件事（业务规则/Business Logic）”**。
+      - 参考定义文件: @.cursor/templates/laravel-service-policy-definition.mdc
+    - 校验：`ValidationService` - 主要用于处理 **“复杂的、与业务数据完整性相关”** 的校验。
+      - 参考定义文件: @.cursor/templates/laravel-service-validation-definition.mdc
+    - 计算：`CalculatorService` - 核心定位是 **“纯粹的逻辑运算器”**。
+      - 参考定义文件: @.cursor/templates/laravel-service-calculator-definition.mdc
+    - 配额：`QuotaService` - 专注于 **“资源量的管理与控制”**，解决的核心问题是：**“剩多少？”** 和 **“够不够？”**。
+      - 参考定义文件: @.cursor/templates/laravel-service-quota-definition.mdc
+    - 统计：`StatisticsService` - 核心定位是 **“数据的宏观聚合与分析”**，负责数据的聚合成指标、趋势或报表（Macro View）
+      - 参考定义文件: @.cursor/templates/laravel-service-statistics-definition.mdc
+    - 通知：`NotificationService` - **消息的发送者与路由者**，隔离了具体的发送渠道（邮件、短信、钉钉、Slack），业务逻辑层不需要关心“怎么发”或“发给谁”，只需要关心“发什么”。
+      - 参考定义文件: @.cursor/templates/laravel-service-notification-definition.mdc
+- **方法命名**：必须是**能力描述**，而非业务动作。
+    - ✅ `calculateDays()`, `ensureEnough()`, `byMonth()`
+    - ❌ `apply()`, `approve()`
+
+## 3.4 **三大纪律**
+
+### 3.4.1 **🚫严禁循环依赖 (Circular Dependency)**
+
+这是最容易出现的致命错误：
+
+- A Service 依赖 B Service
+- B Service 依赖 A Service
+- **结果**：Laravel 容器在实例化时会陷入死循环，直接报错 Stack overflow 或 Circular dependency detected。
+
+**解决方案**：
+
+如果发现 A 和 B 互相需要，说明你的**拆分有问题**。通常有三种解法：
+
+1. **抽取公共层**：把 A 和 B 共同需要的逻辑抽离成 C Service，然后 A 和 B 都去调 C。
+2. **下沉逻辑**：如果 A 是“高层业务”，B 是“底层计算”，那么 A 可以调 B，但 B 绝对不能反过来调 A。
+3. **回到 Action 编排**：让 Action 分别调用 A 和 B，把结果传给对方。
+
+### 3.4.2 **📉注意层级方向 (Unidirectional Architecture)**
+
+通常我们建议将 Service 分为两类，保持 **单向调用**：
+
+1. **原子服务 (Atomic Services)**：
+    - Calculator, Formatter, Validator
+    - 特点：逻辑单一，不依赖其他 Service，只依赖 Repo。
+2. **复合服务 (Composite Services)**：
+    - Policy, Process, Report
+    - 特点：逻辑复杂，需要组合多个原子 Service。
+
+**正确方向**：复合服务 → 原子服务。
+
+**错误方向**：原子服务 → 复合服务。
+
+### 3.4.3 **🧩 不要过度嵌套**
+
+- A 调 B，B 调 C，C 调 D...
+- 这样的调用链会导致调试极其困难，且性能不可控。
+- **建议**：调用深度尽量控制在 **2 层** 以内。如果太深，说明这个逻辑应该提到 **Action** 层去由“上帝视角”进行编排，而不是让底层互相传递。
+
+## 3.5 **何时该拆，何时不该拆？**
+
+**场景 A：**
+
+ShippingPolicyService 需要查用户的积分，但积分就是一个字段 $user->points。
+
+- **做法**：直接读 User Model，**不需要** 调 UserCalculatorService。不要为了用 Service 而用 Service。
+
+**场景 B：**
+
+ShippingPolicyService 需要查用户的积分，但积分逻辑很复杂（要查 3 张表聚合）。
+
+- **做法**：必须调用 UserCalculatorService。如果你在 Shipping 里重写一遍 SQL，以后积分规则改了，你还得记得改 Shipping 的代码，这就造成了逻辑不一致。
+
+### 总结
+
+- **可以调用吗？** Yes。
+- **怎么调？** 依赖注入。
+- **核心原则**：让“复杂的规则 Service”去调用“单纯的计算 Service”。
+
+# **4. 自检与 Code Review 指南**
+
+## **4.1 快速自检口诀**
+
+- **“发生了什么？” (业务动作) →**放 **Action**
+- **“怎么算的 / 规则是什么？” (能力) →** 放 **Service**
+- **“数据长什么样？” (结构)**  → 放 **DTO**
+
+## 4.2 常见反模式 (Anti-Patterns)
+
+| **现象** | **诊断** | **修正方案** |
+| --- | --- | --- |
+| LeaveService::apply() | Service 包含了业务意图 | 改为 ApplyLeaveAction |
+| Action 代码全是 if-else | 业务规则泄露 | 将判断逻辑抽取为 PolicyService |
+| Service 超过 300 行 | 上帝类 (God Service) | 拆分为 Calculator, Validator 等 |
+| Action 外部调用 save() | 破坏了封装 | 所有状态修改必须在 Action 内部完成 |
+| Service 调用 Gate::check | 层次倒置 | 权限检查移回 Action |
+
+# **5. 附录：文档标准化要求**
+
+在开发复杂的 Action 时，需产出以下文档以统一认知：
+
+1. **业务流程图 (Flowchart)**：描述 Action 如何调度各个 Service。
+2. **命令契约 (Action Contract)**：
+    - 定义输入：`Typed DTO` (明确字段、类型)。
+    - 定义副作用：新增了什么表、触发了什么事件。
+3. **领域事件表 (Event Catalog)**：
+    - 事件名 (`LeaveApplied`) → 触发者 (`ApplyLeaveAction`) → 消费者 (`Notification`)。

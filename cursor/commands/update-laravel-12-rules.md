@@ -23,6 +23,13 @@
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-api.mdc: Laravel API 控制器开发规范和最佳实践
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-form-request.mdc: Laravel Data 替代 Form Request 的开发规范和最佳实践
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-api-resource.mdc: Laravel API Resource 开发规范和最佳实践
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-action-and-service.mdc: Action 和 Service 架构分层与职责规范
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-service-policy-definition.mdc: PolicyService 定义
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-service-calculator-definition.mdc: CalculatorService 定义
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-service-validation-definition.mdc: ValidationService 定义
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-service-quota-definition.mdc: QuotaService 定义
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-service-statistics-definition.mdc: StatisticsService 定义
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-service-notification-definition.mdc: NotificationService 定义
 
 ## 代码模板
 

@@ -2,483 +2,238 @@
 description: Laravel 12 Model 开发规范与最佳实践
 globs: src/Models/*.php
 ---
-# Laravel 模型类开发规范
 
-基于项目中现有模型类的分析，总结出以下 Laravel 模型开发的最佳实践和规范。
+# Laravel 12 Model 开发规范与最佳实践
+
+## 🎯 核心目标
+
+**让 Model 永远保持“轻、稳、可预测”。**
+
+防止 Model 在项目迭代 2-3 年后膨胀为不可维护的“上帝对象”（God Object）。
+Model 必须是 **“事实的载体”**，而不是 **“行为的执行者”**。
 
 ## 基础结构规范
 
 **注意**: 请参考 @.cursor/templates/model-template.php.stub 示例文件
 
-### 1. 文件头声明
+## 一、Model 的角色定义
+
+### ✅ Model 是什么
+
+> Model 是领域中的“实体（Entity）”，
+负责“我是谁、我有什么、我和谁有关”。
+> 
+1. **我是谁**（Identity）
+2. **我有什么**（Attributes/Casts）
+3. **我和谁有关**（Relationships）
+
+### ❌ Model 不是什么
+
+- **不是** 业务流程协调者（Action）
+- **不是** 权限决策中心（Policy）
+- **不是** UI / Filament 适配层
+- **不是** 复杂查询配置中心
+
+---
+
+## 二、现代 Laravel 结构规范 (Laravel 12+)
+
+在 Laravel 12 中，推荐使用 **PHP Attributes** 和 **方法式定义** 来替代旧的属性数组。
+
+### 1. 类声明与策略绑定 (Policy Binding)
+
+使用 #[UsePolicy] 替代 AuthServiceProvider 注册。
+
 ```php
-<?php
-
-declare(strict_types=1);
-
-namespace Geekstek\Administrative\Models;
-
-// 导入语句按以下顺序排列：
-// 1. 枚举类
-// 2. 策略类 (Policy)
-// 3. 外部服务类
-// 4. 其他模型类
-// 5. Laravel 核心类 (包含 Attributes)
-// 6. 第三方包类
-use Geekstek\Administrative\Enums\EmployeeContractStatus;
-use Geekstek\Administrative\Policies\EmployeeProfilePolicy;
-use Geekstek\Support\Services\StorageService;
-use Geekstek\Uacl\Models\User;
-use Geekstek\Uacl\Traits\Companyable;
+use App\Domain\Employees\Policies\EmployeeProfilePolicy;
+use Geekstek\Uacl\Traits\Companyable; // 如果使用company_id 做tenant数据隔离时必要
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Model;
-use Spatie\QueryBuilder\AllowedFilter;
-```
 
-### 2. 策略绑定 (Policy Binding)
-
-使用 `#[UsePolicy]` 属性将策略类直接绑定到模型，这是 Laravel 11+ 推荐的方式，无需在 `AuthServiceProvider` 中手动注册。
-
-```php
-use Geekstek\Administrative\Policies\EmployeeProfilePolicy;
-use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-
-#[UsePolicy(EmployeeProfilePolicy::class)]
-class EmployeeProfile extends Model
-{
-    // ...
-}
-```
-
-**优势**：
-- 策略与模型的关联更加直观，代码即文档
-- 无需在 `AuthServiceProvider` 中维护 `$policies` 数组
-- 支持 IDE 自动跳转和重构
-- 遵循 Laravel 12 的声明式编程风格
-
-**策略类命名规范**：
-- 策略类名：`{ModelName}Policy`，如 `EmployeeProfilePolicy`
-- 策略类路径：`Geekstek\{PackageName}\Policies\{ModelName}Policy`
-
-### 3. 类声明和 Trait 使用
-```php
 #[UsePolicy(EmployeeProfilePolicy::class)]
 class EmployeeProfile extends Model
 {
     // Trait 使用顺序：
-    // 1. 业务逻辑相关 Trait (Companyable 等)
-    // 2. Laravel 核心 Trait (HasFactory, SoftDeletes 等)
+    // 1. 业务逻辑接口 Trait (Domain Traits)
     use Companyable;
-    use HasFactory;
+    // 2. Laravel 核心功能 Trait
+    use HasFactory, SoftDeletes;
+    
+    // ...
 }
 ```
 
-## 属性定义规范
+### 2. 类型转换 (Casts)
 
-### 1. 表名定义
-```php
-/**
- * 数据表名称
- */
-protected $table = 'hra_employee_profiles';
-```
+**强制**使用 casts() 方法（Laravel 12+ 引入），而非 $casts 属性。
 
-### 2. 可批量赋值属性
 ```php
-/**
- * 可批量赋值的属性
- */
-protected $fillable = [
-    'company_id',
-    'user_id',
-    'employee_number',
-    'joined_date',
-    'marital_status',
-    'political_status',
-];
-```
-
-### 3. 类型转换 (推荐使用方法形式)
-```php
-// 优先使用方法形式的 casts (Laravel 11+)
 protected function casts(): array
 {
     return [
-        'joined_date' => 'date:Y-m-d',
-        'marital_status' => EmployeeMaritalStatus::class,
-        'political_status' => EmployeePoliticalStatus::class,
-        'is_active' => 'boolean',
-        'amount' => 'decimal:2',
-        'created_at' => 'datetime:Y-m-d H:i:s',
+        'joined_date'    => 'date:Y-m-d',
+        'marital_status' => EmployeeMaritalStatus::class, // Enum
+        'is_active'      => 'boolean',
+        'amount'         => 'decimal:2',
+        'meta_data'      => 'array',
+        'created_at'     => 'datetime:Y-m-d H:i:s',
     ];
 }
-
-// 向后兼容的属性形式
-protected $casts = [
-    'joined_date' => 'date:Y-m-d',
-    'status' => EmployeeContractStatus::class,
-    'attachment' => 'array',
-];
 ```
 
-### 4. 附加属性
+---
+
+## 三、内容白名单 (允许存在的代码)
+
+只有以下内容允许出现在 Model 中：
+
+1. **基础配置**: `$table`, `$fillable` / `$guarded`, `$hidden`.
+2. **Eloqunet 关联**: `HasOne`, `BelongsToMany` 等（这是 Model 的核心职责）。
+3. **纯属性派生 (Attribute/Accessor)**:
+    - 必须使用 `Attribute::make()` 或 `protected` 方法。
+    - **严禁**在 Accessor 中查询数据库或调用外部服务。
+4. **极简状态判断**:
+    - `isActive()`, `isSuperAdmin()`
+    - **限制**: ≤ 5 行，无副作用，不查库。
+5. **通知路由**: `routeNotificationForMail()` 等。
+6. **查询范围 (Scope)**: 仅限于简单的 `WHERE` 组装。
+
+---
+
+## 四、内容红线 (严禁存在的代码)
+
+### ❌ 1. 业务流程 (Action / Command)
+
+**禁止**在 Model 中执行具体的业务动作。
+
 ```php
-protected $appends = [
-    'contract_file_url',
-    'attachment_url',
-];
+// 🚫 错误
+$user->applyLeave(); 
+$user->approveContract();
+
+// ✅ 正确：移至 Action 类
+app(ApplyLeaveAction::class)->execute($user, $data);
 ```
 
-## 关联关系规范
+### ❌ 2. 权限判断 (Policy / Gate)
 
-### 1. 关联关系定义顺序
-按以下顺序定义关联关系：
-1. BelongsTo 关系
-2. HasOne/HasOneThrough 关系  
-3. HasMany/HasManyThrough 关系
+**禁止**在 Model 中写权限逻辑。
 
-### 2. 关联关系命名
 ```php
-// BelongsTo - 使用单数名词
-public function employee(): BelongsTo
-{
-    return $this->belongsTo(EmployeeProfile::class, 'employee_id');
-}
+// 🚫 错误
+$user->canAccessPanel();
 
-public function certificateType(): BelongsTo
-{
-    return $this->belongsTo(CertificateType::class, 'certificate_type_id');
-}
-
-// HasMany - 使用复数名词
-public function certificates(): HasMany
-{
-    return $this->hasMany(EmployeeCertificate::class, 'employee_id');
-}
-
-public function workExperiences(): HasMany
-{
-    return $this->hasMany(EmployeeWorkExperience::class, 'employee_id');
-}
+// ✅ 正确：移至 Policy
+$user->can('view', $panel);
 ```
 
-### 3. HasOneThrough/HasManyThrough 关系
+### ❌ 3. UI / 前端逻辑
+
+**禁止**包含特定于 Filament 或前端展示的逻辑。
+
+- 例外：如果必须实现接口（如 FilamentUser），必须直接委托给 Service（见第六节）。
+
+### ❌ 4. 外部依赖与配置
+
+- 禁止依赖 HTTP Client。
+- 禁止依赖 Spatie 权限的上下文切换（setPermissionsTeamId）。
+- 禁止“配置型方法” (如 getAllowedFilters) —— 這是 Query Object 的职责。
+
+---
+
+## 五、体量与复杂度指标 (强制)
+
+| **指标** | **限制** | **说明** |
+| --- | --- | --- |
+| **核心模型行数** | ≤ 300 行 | 如 User, Order |
+| **普通模型行数** | ≤ 200 行 | 大多数业务模型 |
+| **关联模型行数** | ≤ 120 行 | Pivot 表模型 |
+| **单方法行数** | ≤ 20 行 | 保持短小精悍 |
+| **嵌套层级** | ≤ 2 层 | 禁止深层 if/else |
+| **循环查询** | 禁止 | 严禁 foreach 中执行 query |
+
+---
+
+## 六、命名规范
+
+### 1. 方法命名
+
+- **✅ 正确（描述状态）**: isActive(), hasAvatar(), belongsToCompany()
+- **❌ 错误（描述行为）**: apply(), approve(), process() —— 行为属于 Action 层。
+
+### 2. Scope 命名与实现
+
+使用 Attributes 定义 Scope（如项目支持）或标准命名。
+
 ```php
-public function user(): HasOneThrough
-{
-    return $this->hasOneThrough(
-        User::class,
-        EmployeeProfile::class,
-        'id', // EmployeeProfile 表的外键
-        'id', // User 表的外键
-        'employee_id', // 当前表的外键
-        'user_id' // EmployeeProfile 表的主键
-    );
-}
-```
+use Illuminate\Database\Eloquent\Attributes\Scope;
 
-## 访问器和修改器规范
-
-### 1. 使用 Attribute 类 (Laravel 9+)
-```php
-use Illuminate\Database\Eloquent\Casts\Attribute;
-
-/**
- * 开始日期的 Accessor 和 Mutator
- * 数据库存储格式：YYYY-MM
- * 表单显示格式：YYYY-MM
- */
-protected function startDate(): Attribute
-{
-    return Attribute::make(
-        get: fn (?string $value) => $value ? Carbon::createFromFormat('Y-m', $value)->format('Y-m') : null,
-        set: function (?string $value) {
-            if (empty($value)) {
-                return null;
-            }
-            
-            // 处理不同日期格式的转换逻辑
-            if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value)) {
-                return Carbon::parse($value)->format('Y-m');
-            }
-            
-            return $value;
-        }
-    );
-}
-```
-
-### 2. 文件 URL 访问器
-```php
-public function getContractFileUrlAttribute(): ?string
-{
-    return $this->contract_file ? StorageService::getUrlPath($this->contract_file) : null;
-}
-
-public function getAttachmentUrlAttribute(): array
-{
-    return array_map(function ($file) {
-        return StorageService::getUrlPath($file);
-    }, $this->attachment ?? []);
-}
-```
-
-## 业务逻辑方法规范
-
-### 1. 状态判断方法
-```php
-/**
- * 检查是否即将过期 (30天内)
- */
-public function isAboutToExpire(): bool
-{
-    if (!$this->expiry_date) {
-        return false;
-    }
-    
-    return $this->expiry_date->between(now(), now()->addDays(30));
-}
-```
-
-### 2. 计算和分析方法
-```php
-/**
- * 获取血压状态
- */
-public function getBloodPressureStatus(): string
-{
-    return match (true) {
-        $this->systolic >= 180 || $this->diastolic >= 110 => '高血压危象',
-        $this->systolic >= 140 || $this->diastolic >= 90 => '高血压',
-        $this->systolic >= 120 || $this->diastolic >= 80 => '正常高值',
-        $this->systolic < 90 || $this->diastolic < 60 => '低血压',
-        default => '正常',
-    };
-}
-```
-
-## 查询范围 (Scope) 规范
-
-### 1. 范围查询命名
-```php
 /**
  * 按员工ID查询
  */
-public function scopeEmployee(Builder $query, int $employeeId): void
+#[Scope]
+public function employee(Builder $query, int $employeeId): void
 {
     $query->where('employee_id', $employeeId);
 }
-
-/**
- * 按时间范围查询
- */
-public function scopeDateRange(Builder $query, ?string $startDate, ?string $endDate): void
-{
-    if ($startDate) {
-        $query->where('measurement_at', '>=', $startDate);
-    }
-    
-    if ($endDate) {
-        $query->where('measurement_at', '<=', $endDate);
-    }
-}
-
-/**
- * 获取最新记录
- */
-public function scopeLatest(Builder $query): void
-{
-    $subQuery = static::selectRaw('employee_id, MAX(measurement_at) as latest_measurement')
-        ->groupBy('employee_id');
-        
-    $query->joinSub($subQuery, 'latest_records', function ($join) {
-        $join->on('table.employee_id', '=', 'latest_records.employee_id')
-            ->on('table.measurement_at', '=', 'latest_records.latest_measurement');
-    });
-}
 ```
 
-## 模型事件处理
+---
 
-### 1. 使用 boot 方法
+## 七、特殊情况处理 (例外机制)
+
+**唯一允许的例外**：当框架或第三方包（如 Filament）强制要求 Model 实现特定接口方法时。
+
+**规则**：
+
+1. 方法体 **≤ 10 行**。
+2. 内部逻辑必须 **100% 委托** 给 Service。
+
 ```php
-public static function boot()
+// 实现 FilamentUser 接口
+public function canAccessPanel(Panel $panel): bool
 {
-    parent::boot();
-    
-    static::saving(function ($model) {
-        if ($model->expiry_date && $model->expiry_date < now()) {
-            $model->status = 'expired';
-        }
-    });
+    // 委托给专门的 Service 处理
+    return app(UserPanelAccessService::class)->canAccess($this, $panel);
 }
 ```
 
-## API 支持方法
+---
 
-### 1. Query Builder 支持
+## 八、推荐目录结构 (DDD 风格)
+
+建议按领域（Domain）组织代码，而非按技术类型分层。
+
 ```php
-public static function getAllowedFields(bool $withTableName = false): array
-{
-    $fields = [
-        'id',
-        'company_id',
-        'user_id',
-        'employee_number',
-    ];
-    
-    if ($withTableName) {
-        $tableName = (new static())->getTable();
-        $fields = array_map(fn ($field) => $tableName . '.' . $field, $fields);
-    } else {
-        $fields = array_merge(
-            $fields,
-            User::getAllowedFields(true),
-            // 其他关联模型的字段
-        );
-    }
-    
-    return $fields;
-}
-
-public static function getAllowedFilters(): array
-{
-    return [
-        AllowedFilter::exact('id'),
-        AllowedFilter::exact('company_id'),
-        AllowedFilter::exact('status'),
-    ];
-}
-
-public static function getAllowedSorts(): array
-{
-    return [
-        'id',
-        'created_at',
-        'updated_at',
-    ];
-}
-
-public static function getAllowedIncludes(): array
-{
-    return [
-        'user',
-        'employee',
-        'certificates',
-    ];
-}
+src/Domain/
+ ├─ Users/
+ │  ├─ Models/
+ │  │  └─ User.php
+ │  ├─ Services/
+ │  │  ├─ UserPanelAccessService.php  <-- 承接 UI 逻辑
+ │  │  └─ UserDataScopeService.php
+ │  ├─ Actions/
+ │  │  └─ CreateUserAction.php        <-- 承接业务行为
+ │  ├─ Policies/
+ │  │  └─ UserPolicy.php              <-- 承接权限
+ │  └─ Queries/
+ │     └─ UserQueryPolicy.php         <-- 承接复杂查询配置
 ```
 
-## 工厂方法
+---
 
-### 1. 模型工厂
-```php
-/**
- * 创建模型工厂实例
- */
-public static function newFactory()
-{
-    return EmployeeProfileFactory::new();
-}
-```
+## 九、Code Review 检查清单 (Checklist)
 
-## 命名规范总结
+提交代码前，请对照以下问题自查。**任意一条命中，必须重构**。
 
-### 1. 表名规范
-- 使用 `hra_` 前缀
-- 使用复数形式
-- 使用下划线分隔单词
+- 是否包含具体的业务流程代码（应在 Action）？
+- 是否包含权限判断逻辑（应在 Policy）？
+- 是否包含 Filament 面板的配置或 UI 决策（应在 Service/Resource）？
+- 是否存在超过 20 行的方法？
+- 是否进行了跨聚合/跨表的复杂联合查询（应在 Query Object）？
 
-### 2. 模型类命名
-- 使用 PascalCase
-- 使用单数形式
-- 描述性强的名称
+---
 
-### 3. 方法命名
-- 关联关系：单数用于 BelongsTo，复数用于 HasMany
-- Scope 方法：使用 `scope` 前缀
-- 判断方法：使用 `is` 前缀返回 boolean
-- 获取方法：使用 `get` 前缀
+**CTO 总结**：
 
-### 4. 属性命名
-- 使用 snake_case
-- 布尔字段使用 `is_` 前缀
-- 日期字段使用 `_at` 或 `_date` 后缀
-
-## 注释规范
-
-### 1. 类注释
-```php
-/**
- * 数据表名称
- */
-protected $table = 'hra_employee_profiles';
-
-/**
- * 可批量赋值的属性
- */
-protected $fillable = [...];
-```
-
-### 2. 方法注释
-```php
-/**
- * 获取员工的最高学历记录
- */
-public function getHighestEducation(): ?EmployeeEducation
-{
-    // 实现逻辑
-}
-```
-
-## 错误处理
-
-### 1. 异常处理
-```php
-try {
-    return Carbon::parse($value)->format('Y-m');
-} catch (\Exception $e) {
-    return null;
-}
-```
-
-### 2. 空值处理
-```php
-public function getContractFileUrlAttribute(): ?string
-{
-    return $this->contract_file ? StorageService::getUrlPath($this->contract_file) : null;
-}
-```
-
-## 性能优化建议
-
-### 1. 使用窗口函数优化查询
-```php
-public function scopeLatestPerEmployee(Builder $query): void
-{
-    $subQuery = static::query()
-        ->selectRaw('*, ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY measurement_at DESC) as row_num')
-        ->toBase();
-        
-    $query->fromSub($subQuery, 'ranked_records')
-        ->whereRaw('row_num = 1');
-}
-```
-
-### 2. 合理使用 Eager Loading
-```php
-// 在控制器中使用
-$employees = EmployeeProfile::with(['user', 'contracts', 'certificates'])->get();
-```
-
-## 安全规范
-
-### 1. 批量赋值保护
-- 明确定义 `$fillable` 属性
-- 避免使用 `$guarded = []`
-
-### 2. 类型安全
-- 使用 `declare(strict_types=1)`
-- 为方法参数和返回值添加类型声明
-
-这些规范基于项目中现有模型的最佳实践，确保代码的一致性、可维护性和性能。
+当你能做到**“行为在 Action，规则在 Service，权限在 Policy，Model 只保留‘我是谁’”**时，你的系统就已经进入了长期可维护的安全区间。

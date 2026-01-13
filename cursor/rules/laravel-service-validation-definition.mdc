@@ -1,0 +1,182 @@
+---
+description: ValidationService 定义
+globs:
+  - "src/Services/**/*Service.php"
+alwaysApply: true
+---
+
+# ValidationService 定义
+
+# 目的
+
+文件的內容、目標和範圍
+
+`ValidationService`（校验服务）在架构中的定位主要用于处理 **“复杂的、与业务数据完整性相关”** 的校验。
+
+很多人会问：“为什么不用 Laravel 自带的 FormRequest？”
+
+**答案是：** FormRequest 属于 HTTP 层（Controller），只能处理简单的格式校验（必填、最大长度、Email格式）。一旦校验逻辑涉及到 **数据库深度查询、跨表比对、或批量数据处理**，就必须下沉到 ValidationService。
+
+### 1. 核心定位
+
+1. **脱离 HTTP**：它必须能在 CLI（命令行）、Job（队列）、API 中通用，而不仅限于 Controller。
+2. **关注数据正确性**：检查数据“是不是对的”（如：SKU 是否属于该仓库、邮编与城市是否匹配）。
+3. **支持批量反馈**：在导入场景下，不能遇到一个错就抛异常，而是要返回“第 3、5、10 行数据有误”。
+
+### 2. 场景一：复杂逻辑校验（单一对象）
+
+假设电商下单场景，你需要校验 **“配送地址是否在配送范围内”**。这不仅是查表，可能还要调用地图 API 计算距离。
+
+**写法：**
+
+```php
+namespace App\Services\Logistics;
+
+use App\Models\Address;
+use Illuminate\Validation\ValidationException;
+
+class DeliveryValidationService
+{
+    /**
+     * 校验地址是否可达
+     * 如果不可达，抛出带有具体字段错误的 ValidationException
+     */
+    public function validateAddress(Address $address, string $shippingMethod): void
+    {
+        // 1. 基础逻辑：某些配送方式不支持偏远地区
+        if ($shippingMethod === 'instant' && $address->is_remote) {
+            throw ValidationException::withMessages([
+                'shipping_method' => '极速达不支持偏远地区配送',
+            ]);
+        }
+
+        // 2. 深度逻辑：调用第三方 API 或查库判断距离
+        // 假设这里是一个复杂的 GIS 判断
+        if (! $this->isCoveredByWarehouse($address->coordinates)) {
+            throw ValidationException::withMessages([
+                'address_id' => '该地址超出了我们最近仓库的覆盖范围',
+            ]);
+        }
+    }
+
+    private function isCoveredByWarehouse($coordinates): bool
+    {
+        // ... 复杂的 GIS 计算逻辑 ...
+        return true;
+    }
+}
+```
+
+### 3. 场景二：批量导入校验（最典型用法）
+
+这是 ValidationService 的**高光时刻**。当用户上传 Excel 导入 1000 个员工时，你不能依靠 FormRequest，也不能遇到错误就 throw Exception（否则用户不知道剩下 999 条怎么样）。
+
+你需要一个 **收集错误报告** 的机制。
+
+**写法：**
+
+```php
+namespace App\Services\Imports;
+
+use App\Models\Department;
+
+class EmployeeImportValidator
+{
+    /**
+     * 返回结构：
+     * [
+     *    'row_index' => int,
+     *    'errors' => ['name' => '必填', 'dept' => '部门不存在']
+     * ]
+     */
+    public function validateBatch(array $rows): array
+    {
+        $errors = [];
+        
+        // 预加载所有部门代码，避免 N+1 查询
+        $validDeptCodes = Department::pluck('code')->flip();
+
+        foreach ($rows as $index => $row) {
+            $rowErrors = [];
+
+            // 1. 格式校验
+            if (empty($row['name'])) {
+                $rowErrors['name'] = '姓名不能为空';
+            }
+
+            // 2. 业务数据存在性校验
+            if (!isset($validDeptCodes[$row['department_code']])) {
+                $rowErrors['department_code'] = "部门代码 {$row['department_code']} 不存在";
+            }
+
+            // 3. 唯一性校验 (假设)
+            // if ($this->repo->emailExists($row['email'])) ...
+
+            if (!empty($rowErrors)) {
+                $errors[] = [
+                    'row' => $index + 1,
+                    'data' => $row, // 把原始数据也返回去方便前端展示
+                    'reasons' => $rowErrors
+                ];
+            }
+        }
+
+        return $errors; // 如果数组为空，说明全部通过
+    }
+}
+```
+
+**在 Action 中调用：**
+
+```php
+class ImportEmployeesAction
+{
+    public function __construct(
+        protected EmployeeImportValidator $validator,
+        protected EmployeeRepository $repo
+    ) {}
+
+    public function handle(array $data)
+    {
+        // 1. 先校验，拿回错误报告
+        $failures = $this->validator->validateBatch($data);
+
+        // 2. 如果有错误，直接返回 DTO 或抛出异常给 Controller 处理
+        if (count($failures) > 0) {
+            // 这里可以根据业务决定是“部分导入”还是“全部拒绝”
+            throw new BatchValidationException($failures); 
+        }
+
+        // 3. 全部通过，执行入库...
+    }
+}
+```
+
+### 4. ValidationService vs PolicyService vs FormRequest
+
+这是一个常见的困惑点，可以用以下表格区分：
+
+| **维度** | **FormRequest (HTTP)** | **ValidationService (Service)** | **PolicyService (Service)** |
+| --- | --- | --- | --- |
+| **层级** | Controller 层 (最外层) | Domain 层 (业务核心) | Domain 层 (业务核心) |
+| **关注点** | **格式** (Format) | **数据完整性** (Integrity) | **业务规则/状态** (Rule/State) |
+| **典型问题** | "邮箱格式不对" | "这个 SKU 在仓库里找不到" | "余额不足" 或 "订单已锁定" |
+| **输入** | HTTP Request | Model 或 Array | User + Model |
+| **复用性** | 仅限 HTTP 请求 | 高 (API/Import/CLI 都能用) | 高 |
+| **失败反馈** | 422 JSON | 异常 / 错误数组 / Bool | 异常 (Guard) 或 Bool |
+
+### 5. 书写规范总结
+
+1. **命名**：
+    - 简单校验：`<Entity>Validator` (如 `AddressValidator`)
+    - 场景校验：`<Scenario>Validator` (如 `ProductImportValidator`)
+2. **方法名**：
+    - `validate(Data $data)`: 失败抛异常（强校验）。
+    - `passes(Data $data): bool`: 返回布尔值（软校验）。
+    - `getErrors(array $data): array`: 批量场景，返回错误列表。
+3. **依赖**：
+    - 可以依赖 Repository（查库）。
+    - 可以依赖其他 Calculator。
+4. **禁止**：
+    - 禁止修改数据（它是只读的）。
+    - 禁止包含“权限判断”（那是 Policy 的事）。

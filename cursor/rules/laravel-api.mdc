@@ -1,34 +1,35 @@
 ---
 alwaysApply: true
-description: Laravel API 控制器开发规范和最佳实践
+description: Laravel API 开发全栈规范，包含控制器、Action/Service 选型及文档标准
 globs:
-  - "src/Http/Controllers/Api/**/*Controller.php"
+- "src/Http/Controllers/Api/**/*Controller.php"
+- "src/Actions/**/*.php”
+- "src/Services/**/*.php”
 ---
 
-# Laravel API 控制器开发规范
+# Laravel API 开发规范手册
 
-本项目基于 Laravel 12 + PHP 8.2，使用以下核心技术栈进行 API 开发。
+本项目基于 **Laravel 12 + PHP 8.3**，采用严格的 **Action & Service** 分层架构。本规范旨在统一代码风格，提升可维护性与协作效率。
 
-## 基础结构规范
+## 1. 核心技术栈
 
-**注意**: 请参考 @.cursor/templates/laravel-api.php.stub 示例文件
+- **框架**: Laravel 12 (PHP 8.3+)
+- **认证**: Laravel Sanctum 4 / UACL
+- **权限**: spatie/laravel-permission
+- **路由**: spatie/laravel-route-attributes
+- **文档**: knuckleswtf/scribe
+- **数据**: spatie/laravel-data
+- **查询**: spatie/laravel-query-builder
 
-## 核心技术栈
+---
 
-- **Laravel 12** - 主框架
-- **PHP 8.2** - 编程语言（严格类型模式）
-- **Laravel Sanctum 4** - API 认证
-- **Laravel Permission (spatie/laravel-permission)** - 权限管理
-- **Spatie Query Builder 6** - 查询构建器
-- **Laravel Data 4** - 数据传输对象
-- **Laravel Route Attributes 1** - 路由属性
-- **Scribe API Documentation 5** - API 文档生成
+## 2. 控制器 (Controller) 开发规范
 
-## 控制器结构规范
+控制器仅作为 **HTTP 入口**，负责接收请求、参数校验（通过 DTO/Request）、调用业务逻辑（Action/Service）并返回响应。**严禁在控制器中编写复杂业务逻辑。**
 
-### 1. 基础结构
+### 2.1 基础结构模板
 
-所有 API 控制器必须遵循以下结构：
+所有 API 控制器必须遵循以下 Attributes 声明方式：
 
 ```php
 <?php
@@ -40,410 +41,245 @@ namespace Geekstek\{PackageName}\Http\Controllers\Api\{SubNamespace};
 use Geekstek\ApiLog\Http\Middleware\LogClientRequests;
 use Illuminate\Routing\Controller;
 use Knuckles\Scribe\Attributes\Authenticated;
-use Knuckles\Scribe\Attributes\Endpoint as ScribeEndpoint;
-use Knuckles\Scribe\Attributes\Group as ScribeGroup;
-use Knuckles\Scribe\Attributes\Subgroup as ScribeSubgroup;
-use Spatie\RouteAttributes\Attributes\Group as RouteGroup;
+use Knuckles\Scribe\Attributes\Endpoint;
+use Knuckles\Scribe\Attributes\Group;
+use Knuckles\Scribe\Attributes\Subgroup;
+use Spatie\RouteAttributes\Attributes\RouteGroup;
 use Spatie\RouteAttributes\Attributes\Middleware;
 
-#[RouteGroup(
-    prefix: 'api/{module-slug}',
-    as: 'api.{module-slug}.'
-)]
-#[Middleware([
-    'api',
-    LogClientRequests::class,
-    // 其他中间件...
-])]
-#[ScribeEndpoint(
-    title: '',
-    description: <<<'DESC'
-        业务描述...
-    DESC,
-)]
-#[ScribeGroup(name: '模块名')]
-#[ScribeSubgroup(name: '功能名')]
-class {ControllerName}Controller extends Controller
+#[RouteGroup(prefix: 'api/{module-slug}', as: 'api.{module-slug}.')]
+#[Middleware(['api', LogClientRequests::class])] // 默认中间件
+#[Group(name: '📦 模块名称')]
+#[Subgroup(name: '🔧 功能子类')]
+#[Authenticated] // 若需认证
+class {Resource}Controller extends Controller
 {
-    // 控制器实现
+    // ...
 }
 ```
 
-### 2. 必需的属性和中间件
+### 2.2 依赖注入
 
-- **严格类型声明**: `declare(strict_types=1);`
-- **路由组**: `#[RouteGroup(prefix: 'api/{module-slug}', as: 'api.{module-slug}.')]`
-- **中间件**: 必须包含 `'api'` 和 `LogClientRequests::class`
-- **文档属性**: 使用 Scribe 属性进行 API 文档生成
-- **认证标记**: 需要认证的接口使用 `#[Authenticated]`
-
-### 3. 认证中间件
-
-根据业务需求选择合适的认证方式：
+**强制**使用构造函数注入 Service，**Action** 建议在方法参数中注入。
 
 ```php
-// 标准认证（UACL + Platform）
-#[Middleware([
-    'api',
-    LogClientRequests::class,
-    'auth:uacl,platform',
-])]
-#[Authenticated]
-
-// Sanctum 认证
-#[Middleware([
-    'api',
-    LogClientRequests::class,
-    'auth:sanctum',
-])]
-#[Authenticated]
-
-// 无需认证（如回调接口）
-#[Middleware([
-    'api',
-    LogClientRequests::class,
-])]
-```
-
-### 4. 前端 Slug 验证
-
-需要验证前端 Slug 的接口：
-
-```php
-use Geekstek\Frontend\Http\Middleware\ValidateFrontendSlug;
-
-#[Middleware([
-    'api',
-    LogClientRequests::class,
-    ValidateFrontendSlug::class,
-])]
-```
-
-## 依赖注入规范
-
-### 1. 构造函数注入（推荐）
-
-优先使用构造函数注入服务类：
-
-```php
+// ✅ 推荐
 public function __construct(
-    protected TokenService $tokenService,
+    protected TokenService $tokenService, // 注入常用 Service
 ) {}
-```
 
-或使用传统方式：
-
-```php
-protected TokenService $tokenService;
-
-public function __construct(TokenService $tokenService)
+// 方法参数注入 Action (按需加载)
+public function store(CreateOrderData $data, CreateOrderAction $action)
 {
-    $this->tokenService = $tokenService;
+    return $action->handle($data);
 }
 ```
 
-### 2. 方法参数注入
+**❌ 禁止**使用 app(Service::class) 辅助函数获取实例。
 
-对于 Action 类，使用方法参数注入：
+### 2.3 认证中间件策略
 
-```php
-public function getTokenByJsCode(
-    JsCodeData $data,
-    JsCode2SessionAction $jsCode2SessionAction
-) {
-    // 实现逻辑
-}
-```
+根据接口性质选择 Middleware 组合：
 
-### 3. 避免使用 app() 辅助函数
+| **场景** | **中间件配置** | **示例** |
+| --- | --- | --- |
+| **标准后台/用户接口** | `auth:uacl,platform` | 通用业务接口 |
+| **Token 接口** | `auth:sanctum` | 移动端/SPA 接口 |
+| **回调/公开接口** | 仅 `LogClientRequests` | 支付回调、Webhooks |
+| **前端 Slug 校验** | `ValidateFrontendSlug` | 多租户/Saas 场景 |
 
-**不推荐**：
-```php
-public function __construct()
-{
-    $this->callbackService = app(CallbackService::class);
-}
-```
+## 3. 响应与异常规范
 
-**推荐**：使用构造函数注入
+### 3.1 成功响应
 
-## 方法实现规范
-
-### 1. 使用 Action 模式
-
-业务逻辑应放在 Action 类中：
+优先使用 Resource 类，或者统一结构的 JSON 响应。
 
 ```php
-#[Post(
-    uri: 'wechat/mini-program/auth/get-token-by-js-code',
-    name: 'wechat.mini-program.auth.get-token-by-js-code',
-)]
-#[ResponseFromApiResource(
-    name: UserTokenResource::class,
-    model: PlatformUser::class,
-)]
-public function getTokenByJsCode(
-    JsCodeData $data,
-    JsCode2SessionAction $jsCode2SessionAction
-) {
-    $frontendSlug = request()->header('X-Frontend-Slug');
+// 方式 A: 使用 Resource (推荐)
+return UserResource::make($user)
+    ->additional(['code' => 0, 'message' => '操作成功', 'success' => true]);
 
-    $platformUser = $jsCode2SessionAction->execute(
-        frontendSlug: $frontendSlug,
-        data: $data,
-    );
-
-    $tokenInfo = $this->tokenService->createOrRefreshToken(
-        platformUser: $platformUser
-    );
-
-    return UserTokenResource::make($tokenInfo)
-        ->additional([
-            'success' => true,
-            'code' => 0,
-            'message' => '获取用户Token成功',
-        ]);
-}
-```
-
-### 2. 使用 Service 模式
-
-复杂业务逻辑应放在 Service 类中：
-
-```php
-#[Post(
-    uri: 'payment/{paymentChannelSlug}',
-    name: 'payment'
-)]
-public function paymentCallback(
-    ServerRequestInterface $request,
-    string $paymentChannelSlug
-) {
-    try {
-        return $this->callbackService->paymentCallback(
-            $request,
-            $paymentChannelSlug
-        );
-    } catch (Exception $e) {
-        Log::error('支付回调失败：' . $e->getMessage());
-
-        return response()->json([
-            'message' => '支付回调失败：' . $e->getMessage(),
-        ]);
-    }
-}
-```
-
-### 3. 直接 JSON 响应
-
-简单接口可直接返回 JSON：
-
-```php
-#[Get(
-    uri: 'auth-info',
-    name: 'auth-info',
-)]
-#[Response(
-    content: [
-        'data' => [
-            'user' => [],
-            'platform_user' => [],
-            'roles' => [],
-            'permissions' => [],
-        ],
-        'success' => true,
-        'code' => 200,
-        'message' => '获取用户角色及权限成功',
-    ],
-    status: 200,
-    description: '获取用户角色及权限成功',
-)]
-public function getAuthInfo(AuthInfoAction $authInfoAction)
-{
-    $authUser = Auth::user();
-
-    $authInfo = $authInfoAction->execute(
-        authUser: $authUser
-    );
-
-    return response()->json([
-        'data' => $authInfo,
-        'success' => true,
-        'code' => 0,
-        'message' => '获取用户角色及权限成功',
-    ]);
-}
-```
-
-## 响应格式规范
-
-### 1. 使用 Resource 响应
-
-```php
-return ResourceClass::make($resource)
-    ->additional([
-        'success' => true,
-        'code' => 0,
-        'message' => '操作成功',
-    ]);
-```
-
-### 2. 直接 JSON 响应
-
-```php
+// 方式 B: 直接 JSON (仅限简单场景)
 return response()->json([
     'data' => $data,
-    'success' => true,
     'code' => 0,
     'message' => '操作成功',
+    'success' => true,
 ]);
 ```
 
-### 3. 错误响应
+### 3.2 错误处理
+
+控制器层面主要处理 **HTTP 响应转换**，业务异常应由全局 Handler 或中间件捕获，特殊情况使用 try-catch。
 
 ```php
-return response()->json([
-    'message' => '错误信息',
-    'success' => false,
-    'code' => 500,
-]);
-```
-
-## 异常处理规范
-
-### 1. 使用 try-catch 捕获异常
-
-```php
-public function paymentCallback(
-    ServerRequestInterface $request,
-    string $paymentChannelSlug
-) {
-    try {
-        return $this->callbackService->paymentCallback(
-            $request,
-            $paymentChannelSlug
-        );
-    } catch (Exception $e) {
-        Log::error('支付回调失败：' . $e->getMessage());
-
-        return response()->json([
-            'message' => '支付回调失败：' . $e->getMessage(),
-        ]);
-    }
-}
-```
-
-### 2. 条件判断处理
-
-```php
-public function jsapi(JsapiRequest $request)
-{
-    if ($request->payment_status === 'get_brand_wcpay_request:ok') {
-        try {
-            $paymentSlug = $request->payment_slug;
-            $internalOrderNo = $request->internal_order_no;
-
-            return $this->callback($paymentSlug, $internalOrderNo);
-        } catch (Exception $e) {
-            Log::error('前端微信支付 JSAPI 回调失败：' . $e->getMessage());
-
-            return response()->json([
-                'message' => '前端微信支付 JSAPI 回调失败：' . $e->getMessage(),
-                'success' => false,
-                'code' => 500,
-            ]);
-        }
-    }
-
+try {
+    return $this->service->handleCallback($request);
+} catch (BusinessException $e) {
+    // 业务逻辑已知错误，返回 200/400 + 错误码
     return response()->json([
-        'message' => '支付不成功，没有操作',
         'success' => false,
-        'code' => 200,
+        'code' => $e->getCode() ?: 500,
+        'message' => $e->getMessage(),
     ]);
+} catch (Exception $e) {
+    // 系统级未知错误，记录日志
+    Log::error('系统异常', ['error' => $e]);
+    throw $e; // 交给 Laravel Handler 处理
 }
 ```
 
-## 路由属性规范
+## 4. 业务逻辑分层与选型指南 (核心)
 
-### 1. 标准路由方法
+在开发接口时，必须先评估逻辑复杂度，决定代码放在 **Action** 还是 **Service**。
+
+参考文档 @.cursor/templates/laravel-action-and-service.mdc Action 和 Service 架构分层与职责规范
+
+### 4.1 选型决策矩阵 (Decision Matrix)
+
+| **评估维度** | **Action (业务命令)** | **Service (领域能力)** |
+| --- | --- | --- |
+| **核心职责** | **编排者**：协调资源，完成一个完整的业务意图 | **工具箱**：提供计算、查询、校验等原子能力 |
+| **语义** | "我要做一个动作" (Command) | "我需要一种能力" (Capability) |
+| **副作用** | **有**：修改数据库(CUD)、发邮件、触发事件 | **无/低**：纯计算、复杂查询、第三方API调用 |
+| **事务管理** | **必须负责**开启/提交事务 | **严禁**开启事务 |
+| **复用性** | 低 (通常作为 API 的唯一入口) | 高 (被多个 Action 复用) |
+| **代码示例** | `CreateOrderAction`, `ApproveLeaveAction` | `OrderCalculator`, `PaymentGatewayService` |
+
+### 4.2 场景一：必须使用 Action
+
+当接口对应一个明确的**“写操作”**或**“复合流程”**时。
+
+**特征：**
+
+1. 需要修改数据状态（Create/Update/Delete）。
+2. 需要数据库事务（Transaction）。
+3. 涉及多个步骤（如：校验 -> 扣库 -> 生成订单 -> 发通知）。
+
+**规范写法：**
 
 ```php
-#[Get(uri: 'resources', name: 'resources.index')]
-#[Post(uri: 'resources', name: 'resources.store')]
-#[Get(uri: 'resources/{id}', name: 'resources.show')]
-#[Put(uri: 'resources/{id}', name: 'resources.update')]
-#[Delete(uri: 'resources/{id}', name: 'resources.destroy')]
+// Controller
+#[Post(uri: 'orders', name: 'orders.store')]
+public function store(OrderData $data, PlaceOrderAction $action)
+{
+    // Controller 只负责传参和返回
+    $order = $action->handle($data, Auth::user());
+    return OrderResource::make($order);
+}
+
+// Action
+class PlaceOrderAction
+{
+    public function handle(OrderData $data, User $user): Order
+    {
+        // Action 负责编排
+        return DB::transaction(function () use ($data, $user) {
+            $this->validator->check($user); // 调 Service
+            $order = $this->repo->create($data);
+            $this->notifier->send($user);   // 调 Service
+            return $order;
+        });
+    }
+}
 ```
 
-### 2. 路由参数验证
+### 4.3 场景二：必须使用 Service
+
+当接口主要是**“读操作”**，或者逻辑仅涉及**“单一功能的封装”**时。
+
+**特征：**
+
+1. 复杂的查询逻辑、报表统计、数据聚合。
+2. 第三方 API 的封装（如支付回调处理、物流查询）。
+3. 纯计算逻辑（如价格计算、规则校验）。
+
+**规范写法：**
 
 ```php
+// Controller
+#[Post(uri: 'callbacks/payment', name: 'callbacks.payment')]
+public function callback(Request $request)
+{
+    // 直接调用 Service 的能力
+    $result = $this->paymentService->handleWebhook($request->all());
+    return response()->json($result);
+}
+
+// Service
+class PaymentService
+{
+    public function handleWebhook(array $payload): array
+    {
+        // Service 负责具体逻辑实现，不包含事务（除非是纯逻辑自身闭环）
+        if (!$this->verifySignature($payload)) {
+            throw new InvalidSignatureException();
+        }
+        return ['status' => 'success'];
+    }
+}
+```
+
+### 4.4 自检口诀
+
+- **“发生了什么？” (User Story)**  → 写在 **Action**。
+- **“怎么算的 / 规则是什么？” (Rule/Calc)**  → 写在 **Service**。
+
+## 5. 路由与文档规范
+
+### 5.1 Route Attributes 最佳实践
+
+路由定义必须清晰，包含 HTTP 方法、URI 和路由名称。
+
+```php
+use Spatie\RouteAttributes\Attributes\Get;
+use Spatie\RouteAttributes\Attributes\Post;
 use Spatie\RouteAttributes\Attributes\WhereNumber;
 
-#[Get(uri: 'resources/{id}', name: 'resources.show')]
-#[WhereNumber('id')]
+// 标准 RESTful 定义
+#[Get(uri: 'users', name: 'users.index')]
+#[Post(uri: 'users', name: 'users.store')]
+#[Get(uri: 'users/{id}', name: 'users.show')]
+#[WhereNumber('id')] // 参数约束
+public function show(int $id) { ... }
 ```
 
-### 3. 方法级中间件
+### 5.2 Scribe 文档注解
+
+每个接口必须包含足够生成的文档信息。
 
 ```php
-#[Post(
-    uri: 'wechat/mini-program/auth/get-token-by-js-code',
-    name: 'wechat.mini-program.auth.get-token-by-js-code',
-    middleware: [],
-)]
-```
-
-## 文档注解规范
-
-### 1. Scribe 属性
-
-```php
-#[ScribeEndpoint(
-    title: '',
-    description: <<<'DESC'
-        详细的业务描述...
-    DESC,
-)]
-#[ScribeGroup(name: '模块名')]
-#[ScribeSubgroup(name: '功能名')]
-#[Authenticated]
+#[Endpoint(title: '获取用户详情', description: '返回用户的完整信息及关联角色')]
 #[Header(name: 'X-Frontend-Slug', example: 'geekstek')]
-```
-
-### 2. 响应文档
-
-```php
-#[ResponseFromApiResource(
-    name: ResourceClass::class,
-    model: Model::class,
-)]
-
-// 或
-
+#[ResponseFromApiResource(UserResource::class, User::class)]
 #[Response(
-    content: [
-        'data' => [],
-        'success' => true,
-        'code' => 200,
-        'message' => '操作成功',
-    ],
-    status: 200,
-    description: '操作成功',
+    status: 404,
+    description: '用户不存在',
+    content: ['success' => false, 'message' => 'Not Found']
 )]
+public function show(int $id) { ... }
 ```
 
-## 业务逻辑分离
+## 6. 命名规范汇总
 
-- **控制器**: 仅处理 HTTP 层逻辑，参数验证，响应格式化
-- **Service 层**: 处理复杂业务逻辑
-- **Action 层**: 处理单一职责的业务操作
-- **Data 层**: 数据传输和验证
-- **Resource 层**: 响应格式化
+| **类型** | **命名格式** | **示例** |
+| --- | --- | --- |
+| **URL** | kebab-case (短横线) | `api/user-orders/history` |
+| **Controller** | PascalCase | `UserOrderController` |
+| **Action** | `<Verb><Noun>Action` | `CreateOrderAction`, `ApproveUserAction` |
+| **Service** | `<Noun><Capability>Service` | `OrderCalculatorService`, `PaymentGatewayService` |
+| **Route Name** | snake_case (点分) | `user_orders.history` |
+| **DTO** | `<Action>Data` | `CreateOrderData` |
 
-## 命名规范
+### 总结：接口开发 Checklist
 
-- **控制器**: `{Resource}Controller`
-- **方法**: 使用描述性命名，如 `getTokenByJsCode`, `updateUserInfo`
-- **路由**: 使用 kebab-case，如 `wechat/mini-program/auth/get-token-by-js-code`
-- **中间件**: 按功能分组，认证在前，日志在后
+1. **定义 DTO**: 根据请求参数定义 `Spatie Data` 类。
+2. **选型逻辑**:
+    - 是写操作/复杂流程？  → 创建 `Action`。
+    - 是读操作/单一能力？  → 创建或复用 `Service`。
+3. **编写 Controller**:
+    - 添加 Route Attributes。
+    - 添加 Scribe 文档注解。
+    - 注入 Action/Service。
+    - 调用并返回 Resource/JSON。
+4. **测试**: 验证路由、中间件及业务逻辑返回值。

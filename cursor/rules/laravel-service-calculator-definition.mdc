@@ -1,0 +1,104 @@
+---
+description: CalculatorService 定义
+globs:
+  - "src/Services/**/*Service.php"
+alwaysApply: true
+---
+
+# CalculatorService 定义
+
+# 目的
+
+**`CalculatorService` 核心职责**：将“数据输入”转化为“数据输出”。**(纯计算服务)**
+
+**特点**：
+
+- **无副作用 (Pure)**：不查询数据库（尽量），不修改状态，只跑算法。
+- **可测试性极强**：输入 A 必定得到 B。
+- **封装复杂性**：隐藏复杂的数学公式、日期计算、费率计算。
+
+### 场景示例：计算实际请假天数
+
+假设规则是：
+
+1. 需要排除周末。
+2. 需要排除法定节假日。
+
+**❌ 拆分前 (Action 臃肿)**
+
+```php
+// ApplyLeaveAction.php
+public function handle($user, $data) {
+    $days = 0;
+    // 坏味道：Action 里写循环和日期判断
+    foreach ($period as $date) {
+        if ($date->isWeekend()) continue;
+        if (in_array($date, $holidays)) continue;
+        $days++;
+    }
+    // ...
+}
+```
+
+**✅ 拆分后 (CalculatorService 标准写法)**
+
+```php
+// app/Services/Leave/LeaveDayCalculator.php
+class LeaveDayCalculator
+{
+    // 如果需要外部数据（如节假日配置），通过构造函数注入配置或 Repository
+    public function __construct(
+        protected HolidayRepository $holidayRepo
+    ) {}
+
+    /**
+     * 核心计算方法
+     */
+    public function calculateActualDays(Carbon $start, Carbon $end): int
+    {
+        $days = 0;
+        $period = CarbonPeriod::create($start, $end);
+        
+        // 获取范围内的节假日（一次性查出，避免循环查库）
+        $holidays = $this->holidayRepo->getHolidaysBetween($start, $end);
+
+        foreach ($period as $date) {
+            if ($this->shouldCountAsLeave($date, $holidays)) {
+                $days++;
+            }
+        }
+
+        return $days;
+    }
+
+    /**
+     * 内部私有方法，封装具体计算细节
+     */
+    private function shouldCountAsLeave(Carbon $date, Collection $holidays): bool
+    {
+        // 排除周末
+        if ($date->isWeekend()) {
+            return false;
+        }
+
+        // 排除节假日
+        if ($holidays->contains($date->toDateString())) {
+            return false;
+        }
+
+        return true;
+    }
+}
+```
+
+**调用方 (Action)**
+
+```php
+// ApplyLeaveAction.php
+public function handle(User $user, LeaveData $data) {
+    // Action 只管“要算”，不管“怎么算”
+    $actualDays = $this->calculator->calculateActualDays($data->start, $data->end);
+
+    // ...
+}
+```

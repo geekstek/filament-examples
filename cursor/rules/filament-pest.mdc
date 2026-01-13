@@ -1,0 +1,575 @@
+---
+description: Filament 4 + Pest 测试开发规范
+globs:
+  - "tests/**/*Test.php"
+alwaysApply: true
+---
+
+# Filament + Pest 测试开发规范
+
+本规范适用于使用 Pest PHP 编写 Filament 资源测试的场景，基于 Laravel Package 开发模式（Orchestra Testbench）。
+
+---
+
+## 技术栈要求
+
+| 组件 | 版本 |
+|------|------|
+| PHP | 8.3+ |
+| Pest | 4.x |
+| pest-plugin-laravel | 4.x |
+| pest-plugin-livewire | 4.x |
+| Filament | 4.x |
+| Livewire | 3.x |
+| Orchestra Testbench | 10.x |
+
+---
+
+## 目录结构规范
+
+```
+tests/
+├── Pest.php              # Pest 全局配置 + Helper 函数
+├── TestCase.php          # 测试基类（Orchestra Testbench）
+├── Feature/              # 功能测试
+│   ├── Api/              # API 端点测试
+│   │   └── V1/
+│   │       ├── Controllers/
+│   │       └── Resources/
+│   ├── Factories/        # Factory 测试
+│   └── Filament/         # Filament 资源测试
+│       └── Resources/
+│           └── {ResourceName}/
+│               └── Pages/
+│                   ├── List{Resource}Test.php
+│                   ├── Create{Resource}Test.php
+│                   ├── Edit{Resource}Test.php
+│                   └── View{Resource}Test.php
+└── Unit/                 # 单元测试
+```
+
+---
+
+## tests/Pest.php 规范
+
+### 设计原则
+
+1. **简洁配置**：避免复杂的 `beforeEach`/`afterEach` 钩子
+2. **全局 Helper**：提供常用的测试辅助函数
+3. **性能优先**：不使用全局事务（`RefreshDatabase` trait 已处理）
+
+### 必需配置
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use YourPackage\Tests\TestCase;
+
+// 绑定 TestCase 到所有测试
+uses(TestCase::class)->in('Feature', 'Unit');
+```
+
+### 全局 Helper 函数规范
+
+使用 `if (! function_exists())` 防止重复定义：
+
+```php
+if (! function_exists('actingAsAdmin')) {
+    /**
+     * 以超级管理员身份登录
+     * 自动创建用户和公司，并设置 Filament 租户上下文
+     */
+    function actingAsAdmin(?Company $company = null): User
+    {
+        return test()->actingAsAdmin($company);
+    }
+}
+
+if (! function_exists('actingAsUser')) {
+    /**
+     * 以普通用户身份登录
+     */
+    function actingAsUser(?Company $company = null): User
+    {
+        return test()->actingAsUser($company);
+    }
+}
+
+if (! function_exists('getTestCompany')) {
+    /**
+     * 获取测试公司实例
+     */
+    function getTestCompany(): Company
+    {
+        return test()->getTestCompany();
+    }
+}
+
+if (! function_exists('setFilamentTenant')) {
+    /**
+     * 设置 Filament 租户上下文
+     */
+    function setFilamentTenant(Company $company): void
+    {
+        Filament::setTenant($company);
+    }
+}
+```
+
+### 文件头部注释规范
+
+```php
+/**
+ * Pest 配置文件
+ *
+ * 设计原则:
+ * - 简洁配置：避免复杂的 beforeEach/afterEach 钩子
+ * - 全局 Helper：提供常用的测试辅助函数
+ * - 性能优先：不使用全局事务（RefreshDatabase trait 已处理）
+ *
+ * 测试价值评估:
+ * - 高价值: 页面渲染、表单验证、CRUD 操作
+ * - 低价值: 复杂业务逻辑（应使用 Unit 测试）
+ * - 避免: 过度测试框架内置功能
+ */
+```
+
+---
+
+## tests/TestCase.php 规范
+
+### 设计原则
+
+1. **最小化依赖**：仅加载测试必需的 ServiceProvider
+2. **数据库隔离**：使用 `RefreshDatabase` trait 确保测试间数据隔离
+3. **CI 兼容**：同时支持本地开发和 CI 环境
+
+### 类结构模板
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace YourPackage\Tests;
+
+use Filament\Facades\Filament;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orchestra\Testbench\Attributes\WithMigration;
+use Orchestra\Testbench\TestCase as BaseTestCase;
+
+/**
+ * Package 测试基类
+ *
+ * 设计原则:
+ * - 最小化依赖：仅加载测试必需的 ServiceProvider
+ * - 数据库隔离：使用 RefreshDatabase trait 确保测试间数据隔离
+ * - CI 兼容：同时支持本地开发和 CI 环境
+ */
+#[WithMigration('laravel', 'cache', 'queue', 'session', 'notifications')]
+class TestCase extends BaseTestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // 模拟 Vite（测试环境无需构建资源）
+        $this->withoutVite();
+
+        // 修复 Livewire DataStore 单例问题
+        $this->ensureLivewireDataStoreSingleton();
+
+        // 确保 view errors 被正确共享
+        $this->initViewErrorBag();
+    }
+}
+```
+
+### 必须实现的方法
+
+#### 1. getPackageProviders() - ServiceProvider 加载
+
+```php
+protected function getPackageProviders($app): array
+{
+    return [
+        // Laravel 核心依赖
+        \Laravel\Sanctum\SanctumServiceProvider::class,
+        \Spatie\Permission\PermissionServiceProvider::class,
+        // ...
+
+        // Filament 核心 (必需)
+        \Livewire\LivewireServiceProvider::class,
+        \Filament\FilamentServiceProvider::class,
+        \Filament\Support\SupportServiceProvider::class,
+
+        // Filament UI 组件 (按需加载)
+        \Filament\Schemas\SchemasServiceProvider::class,
+        \Filament\Forms\FormsServiceProvider::class,
+        \Filament\Tables\TablesServiceProvider::class,
+        // ...
+
+        // 自有包
+        \YourPackage\YourServiceProvider::class,
+    ];
+}
+```
+
+#### 2. getEnvironmentSetUp() - 环境配置
+
+```php
+public function getEnvironmentSetUp($app): void
+{
+    // 应用密钥（测试必需）
+    $app['config']->set('app.key', 'base64:xxxxx');
+    $app['config']->set('app.faker_locale', 'zh_CN');
+
+    // Auth 配置
+    $app['config']->set('auth.guards.xxx', [...]);
+    $app['config']->set('auth.providers.xxx', [...]);
+
+    // 多租户配置（如使用）
+    $app['config']->set('package.tenant.model', Company::class);
+}
+```
+
+#### 3. defineDatabaseMigrations() - 迁移管理
+
+```php
+protected function defineDatabaseMigrations(): void
+{
+    $this->artisan('migrate:fresh');
+
+    // 发布迁移文件
+    $this->safePublish('your-package-migrations');
+
+    $this->artisan('migrate');
+}
+
+protected function safePublish(string $tag): void
+{
+    try {
+        $this->artisan('vendor:publish', [
+            '--tag' => $tag,
+            '--force' => true,
+        ]);
+    } catch (\Exception $e) {
+        if (! str_contains($e->getMessage(), 'already exists')) {
+            throw $e;
+        }
+    }
+}
+```
+
+#### 4. 认证辅助方法
+
+```php
+public function actingAsAdmin(?Company $company = null): User
+{
+    $company ??= $this->getTestCompany();
+    $user = User::factory()->superAdmin()->withDefaultCompany($company)->create();
+
+    $this->actingAs($user);
+    Filament::setTenant($company);
+
+    return $user;
+}
+
+public function actingAsUser(?Company $company = null): User
+{
+    $company ??= $this->getTestCompany();
+    $user = User::factory()->withDefaultCompany($company)->create();
+
+    $this->actingAs($user);
+    Filament::setTenant($company);
+
+    return $user;
+}
+
+public function getTestCompany(): Company
+{
+    return Company::firstOrCreate(
+        ['name' => 'Test Company'],
+        ['short_name' => 'TC', 'is_enabled' => true]
+    );
+}
+```
+
+### Livewire 3.x 兼容性修复
+
+```php
+/**
+ * 确保 Livewire DataStore 是单例
+ * Livewire 3.x + Testbench 10 存在兼容性问题
+ */
+protected function ensureLivewireDataStoreSingleton(): void
+{
+    $dataStore = $this->app->make(\Livewire\Mechanisms\DataStore::class);
+    $this->app->instance(\Livewire\Mechanisms\DataStore::class, $dataStore);
+}
+
+protected function initViewErrorBag(): void
+{
+    $errorBag = new \Illuminate\Support\ViewErrorBag();
+    $errorBag->put('default', new \Illuminate\Support\MessageBag());
+    $this->app['view']->share('errors', $errorBag);
+}
+```
+
+---
+
+## Filament 资源测试编写规范
+
+### 文件结构
+
+每个 Filament Resource 对应一个测试目录，按页面类型分文件：
+
+```
+tests/Feature/Filament/Resources/{ResourceName}/Pages/
+├── List{Resource}Test.php
+├── Create{Resource}Test.php
+├── Edit{Resource}Test.php
+└── View{Resource}Test.php
+```
+
+### 通用模板
+
+#### 文件头部
+
+```php
+<?php
+
+use YourPackage\Filament\Resources\Companies\Pages\ListCompanies;
+use YourPackage\Models\Company;
+
+use function Pest\Livewire\livewire;
+
+beforeEach(fn () => actingAsAdmin());
+```
+
+### List 页面测试
+
+```php
+test('列表页可正常渲染', function () {
+    $this->get(ListCompanies::getUrl())->assertStatus(200);
+});
+
+test('列表页支持表格查询/排序/筛选', function () {
+    $records = Company::factory()->count(3)->create();
+
+    livewire(ListCompanies::class)
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords($records)
+        // 先验证排序（全量数据）
+        ->sortTable('updated_at', 'desc')
+        ->assertCanSeeTableRecords($records->sortByDesc('updated_at'), inOrder: true)
+        // 再验证搜索
+        ->searchTable($records->first()->name)
+        ->assertCanSeeTableRecords([$records->first()])
+        ->searchTable(null)
+        // 筛选
+        ->filterTable('created_at', [
+            'start' => now()->subDay()->toDateString(),
+            'end' => now()->toDateString(),
+        ])
+        ->assertCanSeeTableRecords($records);
+});
+```
+
+### Create 页面测试
+
+```php
+test('创建页可正常渲染', function () {
+    $this->get(CreateCompany::getUrl())->assertStatus(200);
+});
+
+test('创建页表单必填校验', function () {
+    livewire(CreateCompany::class)
+        ->assertSuccessful()
+        ->fillForm(['name' => ''])
+        ->call('create')
+        ->assertHasFormErrors(['name' => 'required']);
+});
+
+test('创建页可成功保存', function () {
+    $data = Company::factory()->make()->toArray();
+    unset($data['logo']); // 移除 FileUpload 字段
+
+    livewire(CreateCompany::class)
+        ->fillForm($data)
+        ->call('create')
+        ->assertHasNoFormErrors();
+});
+
+test('创建页 FileUpload 字段可正常渲染', function () {
+    // 注：完整的文件上传流程建议通过 E2E 测试验证
+    livewire(CreateCompany::class)
+        ->assertSuccessful()
+        ->assertFormFieldExists('logo');
+});
+```
+
+### Edit 页面测试
+
+```php
+test('编辑页可达并加载记录', function () {
+    livewire(EditCompany::class, ['record' => Company::factory()->create()->getKey()])
+        ->assertSuccessful();
+});
+
+test('编辑页可更新数据', function () {
+    $company = Company::factory()->create();
+    $newName = 'Renamed Co.';
+
+    livewire(EditCompany::class, ['record' => $company->getKey()])
+        ->fillForm(['name' => $newName])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($company->refresh()->name)->toBe($newName);
+});
+```
+
+### View 页面测试
+
+```php
+test('查看页可达并加载记录', function () {
+    livewire(ViewCompany::class, ['record' => Company::factory()->create()->getKey()])
+        ->assertSuccessful();
+});
+```
+
+---
+
+## 测试命名规范
+
+### 格式要求
+
+- 使用中文描述测试目的（团队偏好）
+- 或使用英文 snake_case 格式
+- 保持简洁明了
+
+### 命名示例
+
+```php
+// ✅ 推荐
+test('列表页可正常渲染');
+test('创建页表单必填校验');
+test('编辑页可更新数据');
+
+// ✅ 英文也可接受
+test('ListCompanies page can be rendered');
+test('can_create_company_with_valid_data');
+
+// ❌ 避免
+test('test1');
+test('it works');
+```
+
+---
+
+## 测试价值评估
+
+### 高价值测试（必写）
+
+- 页面渲染测试（`assertSuccessful()`）
+- 表单必填校验（`assertHasFormErrors()`）
+- CRUD 核心流程
+- 权限控制
+
+### 低价值测试（可选）
+
+- 框架内置功能验证
+- 样式/UI 细节
+
+### 应避免
+
+- 过度测试 Filament/Livewire 框架本身
+- 复杂业务逻辑（应移至 Unit 测试）
+
+---
+
+## Pest 断言速查
+
+### Livewire 断言
+
+```php
+livewire(Component::class)
+    ->assertSuccessful()
+    ->assertCanSeeTableRecords($records)
+    ->assertCanNotSeeTableRecords($records)
+    ->assertHasFormErrors(['field' => 'rule'])
+    ->assertHasNoFormErrors()
+    ->assertFormFieldExists('field_name')
+    ->sortTable('column', 'desc')
+    ->searchTable('keyword')
+    ->filterTable('filter_name', $value);
+```
+
+### Pest 断言
+
+```php
+expect($value)->toBe($expected);
+expect($value)->toBeTrue();
+expect($value)->toBeNull();
+expect($collection)->toHaveCount(3);
+expect($model->refresh()->field)->toBe($newValue);
+```
+
+---
+
+## 运行测试
+
+```bash
+# 运行所有测试
+./vendor/bin/pest
+
+# 运行特定文件
+./vendor/bin/pest tests/Feature/Filament/Resources/Companies/Pages/ListCompaniesTest.php
+
+# 运行特定测试
+./vendor/bin/pest --filter="列表页可正常渲染"
+
+# 生成覆盖率报告
+./vendor/bin/pest --coverage
+
+# 并行测试
+./vendor/bin/pest --parallel
+```
+
+---
+
+## 常见问题处理
+
+### 1. Livewire DataStore 单例问题
+
+症状：测试间数据不一致或组件状态异常
+
+解决：在 `TestCase::setUp()` 中调用 `ensureLivewireDataStoreSingleton()`
+
+### 2. FileUpload 测试限制
+
+症状：无法模拟文件上传
+
+解决：
+- 使用 `assertFormFieldExists()` 验证字段存在
+- 完整上传流程使用 Laravel Dusk E2E 测试
+
+### 3. View Errors 未共享
+
+症状：`Undefined variable: errors`
+
+解决：在 `setUp()` 中初始化 ViewErrorBag
+
+---
+
+## 参考资源
+
+- [Pest PHP 文档](https://pestphp.com/docs/installation)
+- [pest-plugin-livewire](https://github.com/pestphp/pest-plugin-livewire)
+- [Filament Testing 文档](https://filamentphp.com/docs/3.x/panels/testing)
+- [Orchestra Testbench](https://packages.tools/testbench)

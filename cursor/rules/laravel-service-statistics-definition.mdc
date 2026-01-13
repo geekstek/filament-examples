@@ -1,0 +1,198 @@
+---
+description: StatisticsService 定义
+globs:
+  - "src/Services/**/*Service.php"
+alwaysApply: true
+---
+
+# StatisticsService 定义
+
+# 目的
+
+文件的內容、目標和範圍
+
+`StatisticsService`（统计服务）的核心定位是 **“数据的宏观聚合与分析”**。
+
+Repositories 负责“取回单行或多行数据（Micro View）”，而 StatisticsService 负责“把数据聚合成指标、趋势或报表（Macro View）”。
+
+它的主要应用场景是：**仪表盘 (Dashboard)、报表导出 (Excel)、趋势图表 (Charts)**。
+
+### 1. 核心特征
+
+1. **只读 (Read-Only)**：绝对不修改数据库。
+2. **聚合查询 (Aggregations)**：大量使用 `SUM`, `COUNT`, `AVG`, `GROUP BY`。
+3. **数据清洗 (Transformation)**：把数据库查出来的原始行，转换成前端图表可以直接用的格式（例如补全日期空缺）。
+4. **性能敏感 (Performance)**：通常是 **缓存 (Cache)** 的重度使用者。
+
+### 2. 基础写法：仪表盘核心指标
+
+这是最简单的形式，用于计算“总销售额”、“待办任务数”等。
+
+```php
+namespace App\Services\Analytics;
+
+use App\Models\Order;
+use App\Enums\OrderStatus;
+use Carbon\Carbon;
+
+class SalesStatisticsService
+{
+    /**
+     * 获取今日实时概览数据
+     * 返回数组或简单的 DTO
+     */
+    public function getDailyOverview(): array
+    {
+        $today = Carbon::today();
+
+        return [
+            'total_revenue' => Order::whereDate('created_at', $today)
+                ->where('status', OrderStatus::PAID)
+                ->sum('amount'),
+                
+            'order_count' => Order::whereDate('created_at', $today)
+                ->count(),
+                
+            'average_ticket' => Order::whereDate('created_at', $today)
+                ->where('status', OrderStatus::PAID)
+                ->avg('amount') ?? 0.00,
+        ];
+    }
+}
+```
+
+### 3. 进阶写法：图表数据（时间序列补全）
+
+这是 `StatisticsService` 最有价值的地方。
+
+数据库查出的 `GROUP BY date` 数据通常是不连续的（比如星期三没订单，数据库就没这条记录）。**Service 层负责把“0”补齐**，让前端拿到连续的数组。
+
+```php
+namespace App\Services\Analytics;
+
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Carbon\CarbonPeriod;
+
+class UserGrowthStatisticsService
+{
+    /**
+     * 获取近 30 天用户增长趋势（补全空缺日期）
+     * 适合前端 ECharts / Chart.js 直接使用
+     */
+    public function getRegistrationTrend(Carbon $start, Carbon $end): array
+    {
+        // 1. 数据库聚合查询 (只查有数据的天)
+        // 结果形如: ['2023-10-01' => 5, '2023-10-03' => 2]
+        $rawData = User::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('DATE(created_at) as date, count(*) as count')
+            ->groupBy('date')
+            ->pluck('count', 'date'); // Key是日期, Value是数量
+
+        // 2. 逻辑补全 (Filling Gaps)
+        $trend = [];
+        $period = CarbonPeriod::create($start, $end);
+
+        foreach ($period as $date) {
+            $formattedDate = $date->format('Y-m-d');
+            $trend[] = [
+                'date' => $formattedDate,
+                // 如果数据库没查到这天，就填 0
+                'value' => $rawData->get($formattedDate, 0),
+            ];
+        }
+
+        return $trend;
+    }
+}
+```
+
+### 4. 高级写法：带缓存的复杂报表
+
+统计查询通常很慢。StatisticsService 是放置缓存逻辑的最佳地点，这样 Controller 或 Action 不需要关心数据是从 Redis 拿的还是算出来的。
+
+```php
+namespace App\Services\Reports;
+
+use Illuminate\Support\Facades\Cache;
+use App\Models\Transaction;
+
+class FinanceReportService
+{
+    /**
+     * 获取月度财务报表（缓存 1 小时）
+     */
+    public function getMonthlyReport(int $year, int $month): array
+    {
+        $cacheKey = "report_finance_{$year}_{$month}";
+
+        // 使用 Cache::remember 自动处理缓存命中/失效
+        return Cache::remember($cacheKey, 3600, function () use ($year, $month) {
+            return $this->calculateHeavyReport($year, $month);
+        });
+    }
+
+    protected function calculateHeavyReport($year, $month): array
+    {
+        // ... 此处可能包含几百行复杂的 SQL 逻辑 ...
+        // ... 跨表 Join、复杂的过滤等 ...
+        
+        return [
+            'income' => ...,
+            'expense' => ...,
+            'profit' => ...,
+            'details' => ...
+        ];
+    }
+}
+```
+
+### 5. StatisticsService vs Repository
+
+这是最容易混淆的地方：**“这不就是数据库查询吗？为什么不放 Repository？”**
+
+| **维度** | **Repository** | **StatisticsService** |
+| --- | --- | --- |
+| **返回对象** | **Entity / Model** (如 `User` 对象) | **Scalar / Array / DTO** (如 `int`, `float`, `json`) |
+| **关注点** | 增删改查 (CRUD) | 聚合分析 (OLAP) |
+| **SQL 特征** | `find`, `save`, `where` | `sum`, `avg`, `group by`, `union` |
+| **典型用途** | 业务逻辑处理、事务中 | 报表展示、KPI 计算 |
+| **补全逻辑** | 无（数据库啥样就啥样） | 有（补0、格式化、转换单位） |
+
+**示例对比：**
+
+- `OrderRepository::findUnpaid($userId)`  → 返回 `Order[]` 集合（Model）。
+- `OrderStatisticsService::getUnpaidCount($userId)`  → 返回 `int` 7。
+
+### 6. 在 Action 中如何使用？
+
+通常用于 **ExportAction**（导出报表）或 **Dashboard Controller**（直接读）。
+
+**场景：导出 CSV**
+
+```php
+class ExportMonthlySalesAction
+{
+    public function __construct(
+        protected SalesStatisticsService $statsService
+    ) {}
+
+    public function handle(int $year, int $month)
+    {
+        // 1. 调用 Service 获取清洗好的数据
+        // Action 不关心 SQL 怎么写，只关心拿到的数据结构
+        $data = $this->statsService->getMonthlyReport($year, $month);
+
+        // 2. 生成 CSV / Excel (这里可以使用 Laravel Excel 等库)
+        return Excel::download(new SalesExport($data), 'sales.xlsx');
+    }
+}
+```
+
+### 7. 总结
+
+1. **宏观视角**：当你不再关心“某一个订单”，而是关心“订单总数/总额/趋势”时，用 `StatisticsService`。
+2. **数据加工厂**：不仅仅是透传数据库结果，还要负责把数据**加工**成前端图表好用的样子（比如补0、转换成 `['label' => [], 'data' => []]` 格式）。
+3. **缓存层**：它是做查询缓存的最佳位置。
+4. **命名**：`<Domain>StatisticsService` 或 `<Domain>ReportService`。

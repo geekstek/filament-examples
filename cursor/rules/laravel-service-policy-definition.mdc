@@ -1,0 +1,117 @@
+---
+description: PolicyService 定义
+globs:
+  - "src/Services/**/*Service.php"
+alwaysApply: true
+---
+
+# PolicyService 定义
+
+# 1. 目的
+
+`PolicyService` 的核心目标是将**复杂的业务规则判断**从 Action 中剥离出来。
+
+它的职责不是“判断你是谁（权限/Authorization）”，而是“判断当前状态允不允许做这件事（业务规则/Business Logic）”。
+
+# 1. 核心原则
+
+1. **无状态**：只根据传入的参数（User, DTO, Model）进行判断。
+2. **命名清晰**：方法名通常以 check、ensure、validate 或 can 开头。
+3. **两种流派**：
+    - **流派 A（Guard 模式 - 推荐）**：如果不满足规则，直接抛出业务异常。Action 代码最干净。
+    - **流派 B（Boolean 模式）**：返回 true/false，由 Action 决定怎么处理。
+
+# **2. 实战示例：请假场景 (LeavePolicyService)**
+
+假设我们在 ApplyLeaveAction 中原本有大量的 if-else：
+
+- 检查余额够不够。
+- 检查日期有没有重叠。
+- 检查是否在试用期（试用期不能请年假）。
+
+**❌ 重构前：Action 里的 If-Else 地狱**
+
+```php
+class ApplyLeaveAction {
+    public function handle($user, $data) {
+        // 1. 检查余额
+        if ($user->leave_balance < $data->days) {
+            throw new Exception("余额不足");
+        }
+        
+        // 2. 检查重叠
+        $exists = LeaveRequest::where('user_id', $user->id)
+            ->whereBetween('start_date', [$data->start, $data->end])
+            ->exists();
+        if ($exists) {
+             throw new Exception("时段冲突");
+        }
+
+        // 3. 试用期检查
+        if ($user->is_probation && $data->type === 'annual') {
+             throw new Exception("试用期不能请年假");
+        }
+
+        // ... 真正的创建逻辑 ...
+    }
+}
+```
+
+**✅ 重构后：提取 PolicyService**
+
+我们将这些规则封装到一个 Service 中。
+
+**推荐写法（Guard 模式）：**
+
+```php
+namespace App\Services\Leaves;
+
+use App\Exceptions\BusinessException;
+use App\Models\User;
+use App\DTOs\LeaveData;
+
+class LeavePolicyService
+{
+    /**
+     * 统一入口检查：确保请假申请是合法的
+     * 如果不合法，直接抛出异常中断流程
+     */
+    public function ensureCanApply(User $user, LeaveData $data): void
+    {
+        $this->ensureBalanceEnough($user, $data);
+        $this->ensureNoOverlap($user, $data);
+        $this->ensureComplianceWithStatus($user, $data);
+    }
+
+    // 规则 1: 余额检查
+    public function ensureBalanceEnough(User $user, LeaveData $data): void
+    {
+        // 甚至这里可以调用另一个 CalculatorService 来算余额
+        if ($user->leave_balance < $data->days) {
+            throw new BusinessException("您的假期余额不足，剩余: {$user->leave_balance}");
+        }
+    }
+
+    // 规则 2: 时段重叠检查
+    public function ensureNoOverlap(User $user, LeaveData $data): void
+    {
+        $hasOverlap = \App\Models\LeaveRequest::query()
+            ->where('user_id', $user->id)
+            ->where('status', '!=', 'rejected') // 拒绝的单子不算冲突
+            ->overlapsWith($data->start, $data->end) // 假设 Model 有这个 Scope
+            ->exists();
+
+        if ($hasOverlap) {
+            throw new BusinessException("该时段内已存在其他的请假申请");
+        }
+    }
+
+    // 规则 3: 员工状态合规性
+    public function ensureComplianceWithStatus(User $user, LeaveData $data): void
+    {
+        if ($user->is_probation && $data->type === 'annual') {
+            throw new BusinessException("试用期员工暂无法申请年假");
+        }
+    }
+}
+```
