@@ -100,6 +100,26 @@ Service 是**无副作用或低副作用**的工具箱，专注于单一职责�
 - ❌ **禁止包含权限判断** (Gate/Policy)。
 - ❌ **禁止动词**：`Handle`, `Process`, `Execute` (这些是 Action 的词)。
 
+## 3.3 文件夹结构
+
+```
+Services/
+├─ Users/
+│  ├─ UserCreationService.php
+│  ├─ UserPermissionService.php
+│  ├─ UserImportService.php
+│  ├─ UserNotificationService.php
+
+```
+
+判断结论
+
+✅ 这是“以聚合根（Aggregate Root）为中心”的 Service 分组方式
+✅ 非常适合你这种 单模块内 10–30 个模型 的系统
+✅ 也非常适合 Filament + Action Pattern 并行存在的架构
+
+按模型分 Service路径 是一个业务聚合中心，而不是单纯一张表。
+
 ## 3.3 命名规范
 
 - **结构**：`<BusinessObject><Capability>Service`

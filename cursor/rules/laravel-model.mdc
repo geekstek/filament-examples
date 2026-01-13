@@ -178,6 +178,59 @@ public function employee(Builder $query, int $employeeId): void
 }
 ```
 
+注意 **"可以用，但要克制"**
+
+可以用，但只适合“领域无歧义、稳定、跨上下文通用”的 Scope。
+在你这个规模下，它不是默认选项，而是受控选项。
+
+什么时候“适合”用 Attribute Scope
+符合以下 全部条件 才建议用：
+语义稳定、不会随权限变化
+不会掺杂业务规则
+不会依赖当前用户 / 角色 / 组织
+长期存在（2–3 年不会被推翻）
+
+```
+#[Scope]
+public function active(Builder $query): Builder
+{
+    return $query->where('is_active', true);
+}
+
+#[Scope]
+public function ofCompany(Builder $query, int $companyId): Builder
+{
+    return $query->where('company_id', $companyId);
+}
+```
+这些 scope 的特点是：
+
+- 描述数据状态
+- 与“谁在看”无关
+- 不会偷偷吸业务逻辑
+
+哪些 Scope 禁止用 Attribute（非常重要）
+❌ 任何涉及“权限 / 当前用户 / 上下文”的 scope
+```
+#[Scope] // ❌ 禁止
+public function accessibleBy(Builder $query, User $user)
+```
+
+❌ 任何会被 Filament / API / Job 不同入口复用，但规则不同的 scope
+```
+#[Scope] // ❌ 2年后一定拆
+public function visible()
+```
+
+这种 scope 是“慢性毒药”，
+前期爽，后期必炸。
+
+Attribute Scope 只允许用于“数据维度”，
+不允许用于“访问维度 / 业务维度”。
+
+访问维度 → Query Service / Query Policy
+业务维度 → Action / Service
+
 ---
 
 ## 七、特殊情况处理 (例外机制)
