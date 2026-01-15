@@ -89,7 +89,8 @@ class YYYInfolist
         $components = $components ?? self::getComponents();
 
         return $schema
-            ->components($components);
+            ->components($components)
+            ->columns(2);
     }
 
     public static function getComponents(): array
@@ -98,24 +99,24 @@ class YYYInfolist
             // 左侧栏
             Group::make()
                 ->schema([
-                Section::make('基本信息')
-                    ->schema([
-                        TextEntry::make('community.name')
-                            ->label('社区')
-                            ->badge()
-                            ->color('info'),
+                    Section::make('基本信息')
+                        ->schema([
+                            TextEntry::make('community.name')
+                                ->label('社区')
+                                ->badge()
+                                ->color('info'),
 
-                        TextEntry::make('asset.name')
-                            ->label('资产')
-                            ->weight('bold')
-                            ->description(fn($record) => $record->asset?->full_address ?? null),
+                            TextEntry::make('asset.name')
+                                ->label('资产')
+                                ->weight('bold')
+                                ->description(fn($record) => $record->asset?->full_address ?? null),
 
-                        TextEntry::make('feeType.name')
-                            ->label('费用类型')
-                            ->badge()
-                            ->color('primary'),
-                    ])
-                    ->columns(2),
+                            TextEntry::make('feeType.name')
+                                ->label('费用类型')
+                                ->badge()
+                                ->color('primary'),
+                        ])
+                        ->columns(2),
 
                     Section::make('收费设置')
                         ->schema([
@@ -148,7 +149,7 @@ class YYYInfolist
                                 ->placeholder('未设置'),
                         ])
                         ->columns(2),
-                ]);
+                ]),
 
             // 右侧栏
             Group::make()
@@ -185,7 +186,7 @@ class YYYInfolist
                                 ->dateTime('Y-m-d H:i:s'),
                         ])
                         ->columns(2),
-                ]);
+                ]),
         ];
     }
 }

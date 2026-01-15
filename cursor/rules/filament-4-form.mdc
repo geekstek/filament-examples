@@ -167,7 +167,8 @@ class YYYForm
         $components = $components ?? self::getComponents();
 
         return $schema
-            ->components($components);
+            ->components($components)
+            ->columns(3);
     }
 
     public static function getComponents(): array
@@ -229,36 +230,34 @@ class YYYForm
                                 ->preload(),
                         ])
                         ->columns(2),
-                    ])
-                    ->columnSpan(['lg' => 2]), // 左侧占 2/3 宽度
+                ])
+                ->columnSpan(['lg' => 2]), // 左侧占 2/3 宽度
 
-                Group::make()
-                    ->schema([
-                        Section::make('有效期设置')
-                            ->schema([
-                                DatePicker::make('effective_from')
-                                    ->label('生效日期')
-                                    ->required()
-                                    ->default(now())
-                                    ->native(false)
-                                    ->displayFormat('Y-m-d H:i:s'),
-                                FileUpload::make('avatar')
-                                    ->label(__(self::TRANSLATIONS . 'fields.avatar.label'))
-                                    ->directory('avatars') // 指定存储目录
-                                    ->panelLayout('grid') // 网格预览布局
-                                    ->previewable() // 支持预览
-                                    ->downloadable() // 支持下载
-                                    ->image() // 指定为图片类型
-                                    ->imageEditor(), // 支持图片编辑
-                                ToggleButtons::make('is_active')
-                                    ->label('启用')
-                                    ->default(true)
-                                    ->inline(false),
-                            ]);
-                    ])
-                    ->columnSpan(['lg' => 1]), // 右侧占 1/3 宽度
-            ])
-            ->columns(3), // 总布局设为3列
+            Group::make()
+                ->schema([
+                    Section::make('有效期设置')
+                        ->schema([
+                            DatePicker::make('effective_from')
+                                ->label('生效日期')
+                                ->required()
+                                ->default(now())
+                                ->native(false)
+                                ->displayFormat('Y-m-d H:i:s'),
+                            FileUpload::make('avatar')
+                                ->label(__(self::TRANSLATIONS . 'fields.avatar.label'))
+                                ->directory('avatars') // 指定存储目录
+                                ->panelLayout('grid') // 网格预览布局
+                                ->previewable() // 支持预览
+                                ->downloadable() // 支持下载
+                                ->image() // 指定为图片类型
+                                ->imageEditor(), // 支持图片编辑
+                            ToggleButtons::make('is_active')
+                                ->label('启用')
+                                ->default(true)
+                                ->inline(false),
+                        ]),
+                ])
+                ->columnSpan(['lg' => 1]), // 右侧占 1/3 宽度
         ];
     }
 }
