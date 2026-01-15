@@ -44,16 +44,17 @@ Resources/
 │   ├── RelationManagers/            # 关联管理器 
 │   │   └── RelatedResourceManager.php # @.cursor/templates/
 │   ├── Schemas/                     # 表单和信息列表
-│   │   ├── ResourceNameForm.php     # @.cursor/templates/filament-resource-form.php.stub
-│   │   └── ResourceNameInfolist.php # @.cursor/templates/filament-resource-infolist.php.stub
+│   │   ├── ResourceNameForm.php     # @.cursor/rules/filament-4-form.mdc
+│   │   └── ResourceNameInfolist.php # @.cursor/rules/filament-4-infolist.mdc
 │   └── Tables/                      # 表格定义 
-│       └── ResourceNamesTable.php  # @.cursor/templates/filament-resource-table.php.stub
+│       └── ResourceNamesTable.php  # @.cursor/rules/filament-4-table.mdc
 ```
 
 ### 2. 文件命名规范
 - **Resource 类**: `{ModelName}Resource.php`
 - **页面类**: `{Action}{ModelName}.php` (如 `CreateEmployeeProfile.php`)
-- **Schema 类**: `{ModelName}{Type}.php` (如 `EmployeeProfileForm.php`)
+- **Form 类**: `{ModelName}Form.php` (如 `EmployeeProfileForm.php`)
+- **Infolist 类**: `{ModelName}Infolist.php` (如 `EmployeeProfileInfolist.php`)
 - **Table 类**: `{ModelName}sTable.php` (复数形式)
 - **Manager 类**: `{RelationName}Manager.php`
 - **Importer 类**: `{ModelName}Importer.php`
@@ -115,17 +116,29 @@ if (Filament::getTenant()) {
 ```
 
 ### 2. 权限控制
+
 ```php
+use Geekstek\Uacl\Attributes\ResourcePermissions;
+use Geekstek\Uacl\Traits\HasResourcePermission;
+
 // 使用权限 Trait
-use ResourcePermissionTrait;
+use HasResourcePermission;
 
 // 定义权限
-public static function getPermissions(): array
+#[ResourcePermissions(permissions: [
+    'view-any',
+    'view',
+    'create',
+    'update',
+    'delete',
+    'delete-any',
+    'activity-log',
+])]
+class CompanyResource extends Resource
 {
-    return [
-        'view-any', 'create', 'view', 'update', 'delete',
-        'import', 'export', 'activity-log',
-    ];
+    use HasResourcePermission;
+
+    // ...
 }
 ```
 

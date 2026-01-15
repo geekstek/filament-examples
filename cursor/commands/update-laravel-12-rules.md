@@ -17,7 +17,9 @@
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-enum.mdc:Laravel Enum类
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-model.mdc:Laravel Model类
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-resources.mdc: Filament 4 Resource 开发规范
-- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-4-resource-form.mdc: Filament 4 Resources Form 开发规范
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-4-table.mdc: Filament 4 Table 开发规范
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-4-form.mdc: Filament 4 Form 开发规范
+- https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-4-infolist.mdc: Filament 4 Infolist 开发规范
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-import.mdc: Filament Resource Import 开发规范
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/filament-export.mdc: Filament Resource Export 开发规范
 - https://raw.githubusercontent.com/geekstek/filament-examples/refs/heads/main/cursor/rules/laravel-api.mdc: Laravel API 控制器开发规范和最佳实践

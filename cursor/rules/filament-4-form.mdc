@@ -1,0 +1,265 @@
+---
+description: Filament 4 Resources Form 开发规范
+globs:
+  - "src/Filament/Resources/**/Schemas/*Form.php"
+alwaysApply: true
+---
+
+## 一、布局架构原则
+
+## Layout 的命名空间更正
+
+| 错误 | 正确 |
+| --- | --- |
+| `Filament\Forms\Components\Tabs` | `Filament\Schemas\Components\Tabs` |
+| `Filament\Forms\Components\Group` | `Filament\Schemas\Components\Group` |
+| `Filament\Forms\Components\Section` | `Filament\Schemas\Components\Section` |
+| `Filament\Forms\Components\Grid` | `Filament\Schemas\Components\Grid` |
+| `Filament\Forms\Components\Fieldset` | `Filament\Schemas\Components\Fieldset` |
+| `Filament\Forms\Components\Flex` | `Filament\Schemas\Components\Flex` |
+| `Filament\Forms\Components\Wizard` | `Filament\Schemas\Components\Wizard` |
+
+表单控件使用 `Filament\Forms\Components\Xxx`
+
+### 1.1 布局优先级
+
+使用顺序：基础字段 → Section → Tabs → Wizard
+
+- 非必要时, 不要使用 ->description('xxx'), 会使用长单变得更长
+
+```
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Wizard;
+```
+
+适用场景：
+
+- 字段数 < 8：直接平铺
+- 字段数 8-15：使用 2-3 个 Section
+- 字段数 >15：使用 Tabs 分组
+
+### 1.2 Section 最佳实践
+
+#### Grid 和 Columns 策略对比
+
+**错误示例**
+
+```php
+Tabs\Tab::make('联系方式')
+    ->schema([
+        // ❌ 冗余层级：为了两列布局，显式引入了 Grid 组件
+        \Filament\Forms\Components\Grid::make(2)
+            ->schema([
+                TextInput::make('phone'), // 位于 Grid 内
+                TextInput::make('email'), // 位于 Grid 内
+            ]),
+        
+        // 下方字段独立于 Grid 之外
+        TextInput::make('website')->columnSpanFull(),
+    ]);
+```
+
+**正确示例**
+
+```php
+Tabs\Tab::make('联系方式')
+    ->schema([
+        // ✅ 扁平层级：直接放置字段，无需嵌套
+        TextInput::make('phone'), 
+        TextInput::make('email'),
+        
+        // 使用 columnSpan 控制跨列
+        TextInput::make('website')->columnSpanFull(),
+    ])
+    ->columns(2); // ✅ 全局控制：直接定义 Tab 容器为 2 列模式
+```
+
+(Grid)：导致了 Deep Nesting (深层嵌套)。开发者阅读代码时，需要多理解一层缩进（Tab -> Schema -> Grid -> Schema -> Field）。如果表单复杂，缩进地狱（Indentation Hell）会非常严重
+
+(Columns)：保持了 Flat Structure (扁平结构)。所有字段处于同一层级，阅读视线顺畅，逻辑一目了然。
+
+#### true/false 时
+
+```php
+ToggleButtons::make('feedback')
+    ->label('Like this post?')
+    ->boolean()
+    ->inline()
+```
+
+#### enums 时
+
+选项少于等如4个时
+
+```php
+ToggleButtons::make('status')
+    ->label('Status')
+    ->options(ActiveStatus::class)
+    ->default(ActiveStatus::DEFAULT)
+    ->grouped()
+    ->required()
+```
+
+选项多于4个时 使用Select
+
+#### Components 写到单独 getComponents() 方法
+
+可以更好的在其他类引用这 Form 的 Components, 例如: RelationManager 引用这 Form 的基础 字段, 再修改数组输出
+
+## 二、视觉优化规范
+
+### 2.1 图标使用规则
+
+图标选择原则：
+use 
+
+- 表单操作：Heroicon::XXX 系列（实心）
+- 信息展示：Heroicon::OutlinedXXX 系列（线框）
+
+禁用方案：
+
+- ❌ 同一 Section 混合使用不同系列图标
+- ✅ 全站保持统一图标风格
+
+## 三、命名与翻译规范
+
+### 3.1 Section 命名规范
+
+每个 Section 需添加翻译标识：
+
+```php
+Section::make(__(self::TRANSLATIONS . 'sections.<section名>.label'))
+    ->heading(__(self::TRANSLATIONS . 'sections.<section名>.heading'))
+    ->description(__(self::TRANSLATIONS . 'sections.<section名>.description'))
+```
+
+## 完整示例
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Filament\Resources\YYY\Schemas; // XXX替换为实际的业务命名空间, YYY替换为模型名(复数)
+
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Schema;
+use Geekstek\Community\Models\Asset;
+use Geekstek\Community\Models\Community;
+use Geekstek\PropAcc\Enums\AssetRateCycle;
+use Geekstek\PropAcc\Models\FeeType;
+use Geekstek\PropAcc\Models\RatePlan;
+
+class YYYForm
+{
+    public const TRANSLATIONS = 'XXX::resources/YYY.';
+
+    public static function configure(Schema $schema, ?array $components = []): Schema
+    {
+        $components = $components ?? self::getComponents();
+
+        return $schema
+            ->components($components);
+    }
+
+    public static function getComponents(): array
+    {
+        return [
+            // 有需要时考虑使用 Section + Aside (分栏/侧边布局)
+            Group::make()
+                ->schema([
+                    Section::make('基本信息')
+                        ->schema([
+                            Select::make('community_id')
+                                ->label('社区')
+                                ->options(Community::query()->pluck('name', 'id'))
+                                ->required()
+                                ->searchable()
+                                ->preload()
+                                ->live()
+                                ->afterStateUpdated(function ($state, callable $set) {
+                                    $set('asset_id', null);
+                                    $set('fee_type_id', null);
+                                    $set('rate_plan_id', null);
+                                }),
+
+                            Select::make('asset_id')
+                                ->label('资产')
+                                ->options(
+                                    fn(Get $get) => Asset::query()
+                                        ->when($get('community_id'), fn($q, $v) => $q->where('community_id', $v))
+                                        ->orderBy('name')
+                                        ->pluck('name', 'id')
+                                )
+                                ->required()
+                                ->searchable()
+                                ->preload()
+                                ->getOptionLabelFromRecordUsing(
+                                    fn($record) => $record->name . ' (' . ($record->full_address ?? '') . ')'
+                                ),
+
+                            Select::make('fee_type_id')
+                                ->label('费用类型')
+                                ->options(FeeType::query()->pluck('name', 'id'))
+                                ->required()
+                                ->searchable()
+                                ->preload()
+                                ->live()
+                                ->afterStateUpdated(fn($state, callable $set) => $set('rate_plan_id', null)),
+
+                            Select::make('rate_plan_id')
+                                ->label('费率方案')
+                                ->options(
+                                    fn(Get $get) => RatePlan::query()
+                                        ->when($get('community_id'), fn($q, $v) => $q->where('community_id', $v))
+                                        ->when($get('fee_type_id'), fn($q, $v) => $q->where('fee_type_id', $v))
+                                        ->where('is_active', true)
+                                        ->pluck('name', 'id')
+                                )
+                                ->required()
+                                ->searchable()
+                                ->preload(),
+                        ])
+                        ->columns(2),
+                    ])
+                    ->columnSpan(['lg' => 2]), // 左侧占 2/3 宽度
+
+                Group::make()
+                    ->schema([
+                        Section::make('有效期设置')
+                            ->schema([
+                                DatePicker::make('effective_from')
+                                    ->label('生效日期')
+                                    ->required()
+                                    ->default(now())
+                                    ->native(false)
+                                    ->displayFormat('Y-m-d H:i:s'),
+                                FileUpload::make('avatar')
+                                    ->label(__(self::TRANSLATIONS . 'fields.avatar.label'))
+                                    ->directory('avatars') // 指定存储目录
+                                    ->panelLayout('grid') // 网格预览布局
+                                    ->previewable() // 支持预览
+                                    ->downloadable() // 支持下载
+                                    ->image() // 指定为图片类型
+                                    ->imageEditor(), // 支持图片编辑
+                                ToggleButtons::make('is_active')
+                                    ->label('启用')
+                                    ->default(true)
+                                    ->inline(false),
+                            ]);
+                    ])
+                    ->columnSpan(['lg' => 1]), // 右侧占 1/3 宽度
+            ])
+            ->columns(3), // 总布局设为3列
+        ];
+    }
+}
+```

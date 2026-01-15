@@ -1,0 +1,178 @@
+---
+description: Filament 4 Table 开发规范与最佳实践
+globs: 
+  - "src/Filament/Resources/**/Tables/*Table.php"
+alwaysApply: true
+---
+
+# Filament 4 Table 开发规范与最佳实践
+
+## Columns 写到单独 getColumns() 方法
+
+可以更好的在其他类引用这Table 的 Columns, 例如: RelationManager 引用这 Table 的基础 字段, 再修改数组输出
+
+## Filters 写到单独 getFilters() 方法
+
+和 Columns 目的一样
+
+## 完整示例
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Filament\Resources\YYY\Tables; // XXX替换为实际的业务命名空间, YYY替换为模型名(复数)
+
+use Filament\Actions\ActionGroup;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ExportBulkAction;
+use Filament\Actions\ViewAction;
+use Filament\Facades\Filament;
+use Filament\Tables\Columns\ImageColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Geekstek\ActivityLog\Filament\Resources\ActivityLogs\Actions\ActivityLogTimelineTableAction;
+use Geekstek\XXX\Filament\Resources\YYY\Actions\ZZZAction;
+use Geekstek\XXX\Filament\Resources\YYY\Exports\YYYExporter;
+use Geekstek\XXX\Models\YYY;
+use Geekstek\Community\Models\Community;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Malzariey\FilamentDaterangepickerFilter\Filters\DateRangeFilter;
+
+class YYYResource
+{
+    public const TRANSLATIONS = 'XXX::resources/YYY.';
+
+    public static function configure(Table $table, ?array $columns = [], ?array $filters = []): Table
+    {
+        $columns = $columns ?? $self::getColumns();
+        $filters = $filters ?? $self::getFilters();
+
+        return $table
+            ->columns($columns)
+            ->filters($filters)
+            ->recordActions([
+                ActionGroup::make([
+                    ViewAction::make(),
+                    EditAction::make(),
+                    DeleteAction::make(),
+                    ActivityLogTimelineTableAction::make()
+                        ->authorize('activity'),
+                ]),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                    ExportBulkAction::make()
+                        ->exporter(YYYExporter::class)
+                        ->authorize('export'),
+                ]),
+            ])
+            ->searchOnBlur() // 必须使用
+            ->searchDebounce('1000ms') // 必须使用
+            ->recordAction(null) // 必须使用
+            ->recordUrl(null) // 必须使用
+            ->defaultSort('created_at', 'desc');
+    }
+
+    public static function getColumns(): array
+    {
+        return [
+            // id字段必须按这格式
+            TextColumn::make('id')
+                ->label('ID')
+                ->sortable()
+                ->searchable()
+                ->toggleable(isToggledHiddenByDefault: true),
+            ImageColumn::make('user.avatar')
+                ->label(__(self::TRANSLATIONS . 'fields.avatar.label'))
+                ->circular()
+                ->imageSize(100)
+                ->simpleLightbox()
+                ->toggleable(),
+            TextColumn::make('employee_number')
+                ->label(__(self::TRANSLATIONS . 'fields.employee_number.label'))
+                ->sortable()
+                ->searchable()
+                ->toggleable(),
+            TextColumn::make('joined_date')
+                ->label(__(self::TRANSLATIONS . 'fields.joined_date.label'))
+                ->date('Y-m-d')
+                ->sortable()
+                ->searchable()
+                ->toggleable(),
+            // created_at 字段必须按这格式
+            TextColumn::make('created_at')
+                ->label(__(self::TRANSLATIONS . 'fields.created_at.label'))
+                ->sortable()
+                ->searchable()
+                ->toggleable(isToggledHiddenByDefault: true),
+            // updated_at 字段必须按这格式
+            TextColumn::make('updated_at')
+                ->label(__(self::TRANSLATIONS . 'fields.updated_at.label'))
+                ->sortable()
+                ->searchable()
+                ->toggleable(isToggledHiddenByDefault: true),
+        ];
+    }
+
+    public static function getFilters(): array
+    {
+        return [
+            SelectFilter::make('position')
+                ->label('职位')
+                ->relationship('organizationUsers.position', 'name')
+                ->native(false)
+                ->multiple()
+                ->preload()
+                ->searchable()
+                ->query(function (Builder $query, array $data): Builder {
+                    if (empty($data['values'])) {
+                        return $query;
+                    }
+
+                    return $query->whereHas('organizationUsers.position', function ($query) use ($data) {
+                        $query->whereIn('id', $data['values']);
+                    });
+                }),
+
+            DateRangeFilter::make('created_at')
+                ->label('创建时间')
+                ->displayFormat('YYYY-MM-DD')
+                ->format('Y-m-d'),
+            DateRangeFilter::make('updated_at')
+                ->label('更新时间')
+                ->displayFormat('YYYY-MM-DD')
+                ->format('Y-m-d'),
+            Filter::make('birthday_this_and_next_month')
+                ->label('本月及下月生日')
+                ->query(
+                    fn (Builder $query): Builder => $query
+                        ->whereHas('userProfile', function (Builder $query) {
+                            $currentMonth = Carbon::now()->month;
+                            $nextMonth = Carbon::now()->addMonth()->month;
+
+                            // 获取本月和下月的月份数字
+                            $query->whereRaw('MONTH(date_of_birth) IN (?, ?)', [$currentMonth, $nextMonth]);
+                        })
+                )
+                ->toggle(),
+            SelectFilter::make('has_social_insurance')
+                ->label(__(self::TRANSLATIONS . 'fields.has_social_insurance.label'))
+                ->options([
+                    '1' => '是',
+                    '0' => '否',
+                ])
+                ->native(false),
+        ];
+    }
+}
+```

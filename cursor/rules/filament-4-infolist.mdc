@@ -1,0 +1,192 @@
+---
+description: Filament 4 Infolist 开发规范与最佳实践
+globs: 
+  - "src/Filament/Resources/**/Schemas/*Infolist.php"
+alwaysApply: true
+---
+
+# Filament 4 Infolist 开发规范与最佳实践
+
+## Layout 的命名空间更正
+
+| 错误 | 正确 |
+| --- | --- |
+| `Filament\Forms\Components\Tabs` | `Filament\Schemas\Components\Tabs` |
+| `Filament\Forms\Components\Group` | `Filament\Schemas\Components\Group` |
+| `Filament\Forms\Components\Section` | `Filament\Schemas\Components\Section` |
+| `Filament\Forms\Components\Grid` | `Filament\Schemas\Components\Grid` |
+| `Filament\Forms\Components\Fieldset` | `Filament\Schemas\Components\Fieldset` |
+| `Filament\Forms\Components\Flex` | `Filament\Schemas\Components\Flex` |
+| `Filament\Forms\Components\Wizard` | `Filament\Schemas\Components\Wizard` |
+
+## Section/Group/Tab 的设计
+
+- 非必要时, 不要使用 ->description('xxx'), 会使用长单变得更长
+
+## Grid 和 Columns 策略对比
+
+**错误示例**
+
+```php
+Tabs\Tab::make('联系方式')
+    ->schema([
+        // ❌ 冗余层级：为了两列布局，显式引入了 Grid 组件
+        \Filament\Forms\Components\Grid::make(2)
+            ->schema([
+                TextEntry::make('phone'), // 位于 Grid 内
+                TextEntry::make('email'), // 位于 Grid 内
+            ]),
+        
+        // 下方字段独立于 Grid 之外
+        \Filament\Infolists\Components\TextEntry::make('website'),
+    ]);
+```
+
+**正确示例**
+
+```php
+Tabs\Tab::make('联系方式')
+    ->schema([
+        // ✅ 扁平层级：直接放置字段，无需嵌套
+        TextEntry::make('phone'), // 位于 Grid 内
+        TextEntry::make('email'), // 位于 Grid 内
+        
+        // 使用 columnSpan 控制跨列
+        \Filament\Infolists\Components\TextEntry::make('website')->columnSpanFull(),
+    ])
+    ->columns(2); // ✅ 全局控制：直接定义 Tab 容器为 2 列模式
+```
+
+(Grid)：导致了 Deep Nesting (深层嵌套)。开发者阅读代码时，需要多理解一层缩进（Tab -> Schema -> Grid -> Schema -> Field）。如果表单复杂，缩进地狱（Indentation Hell）会非常严重
+
+(Columns)：保持了 Flat Structure (扁平结构)。所有字段处于同一层级，阅读视线顺畅，逻辑一目了然。
+
+## Components 写到单独 getComponents() 方法
+
+可以更好的在其他类引用这 Infolist 的 Components, 例如: Filament Action 中的 schema()引用这 Infolist 的基础字段, 再修改数组输出
+
+## 完整示例
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Geekstek\XXX\Filament\Resources\YYY\Schemas; // XXX替换为实际的业务命名空间, YYY替换为模型名(复数)
+
+use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
+
+class YYYInfolist
+{
+    public const TRANSLATIONS = 'XXX::resources/YYY.';
+
+    public static function configure(Schema $schema, ?array $components = []): Schema
+    {
+        $components = $components ?? self::getComponents();
+
+        return $schema
+            ->components($components);
+    }
+
+    public static function getComponents(): array
+    {
+        return [
+            // 左侧栏
+            Group::make()
+                ->schema([
+                Section::make('基本信息')
+                    ->schema([
+                        TextEntry::make('community.name')
+                            ->label('社区')
+                            ->badge()
+                            ->color('info'),
+
+                        TextEntry::make('asset.name')
+                            ->label('资产')
+                            ->weight('bold')
+                            ->description(fn($record) => $record->asset?->full_address ?? null),
+
+                        TextEntry::make('feeType.name')
+                            ->label('费用类型')
+                            ->badge()
+                            ->color('primary'),
+                    ])
+                    ->columns(2),
+
+                    Section::make('收费设置')
+                        ->schema([
+                            TextEntry::make('billing_cycle')
+                                ->label('收费周期')
+                                ->badge()
+                                ->color(fn($state) => $state?->getColor()),
+
+                            TextEntry::make('billing_day')
+                                ->label('每期出账日')
+                                ->suffix('号'),
+
+                            TextEntry::make('quantity_locked')
+                                ->label('锁定数量')
+                                ->numeric(decimalPlaces: 2)
+                                ->placeholder('使用资产面积'),
+                        ])
+                        ->columns(2),
+
+                    Section::make('出账信息')
+                        ->schema([
+                            TextEntry::make('last_billed_period_end')
+                                ->label('最后出账至')
+                                ->date('Y-m-d')
+                                ->placeholder('未出账'),
+
+                            TextEntry::make('next_period_start')
+                                ->label('下次出账起')
+                                ->state(fn($record) => $record->getNextPeriodStart()?->format('Y-m-d'))
+                                ->placeholder('未设置'),
+                        ])
+                        ->columns(2),
+                ]);
+
+            // 右侧栏
+            Group::make()
+                ->schema([
+                    Section::make('有效期')
+                        ->schema([
+                            TextEntry::make('effective_from')
+                                ->label('生效日期')
+                                ->date('Y-m-d'),
+
+                            TextEntry::make('effective_until')
+                                ->label('失效日期')
+                                ->date('Y-m-d')
+                                ->placeholder('永久'),
+
+                            IconEntry::make('is_active')
+                                ->label('状态')
+                                ->boolean()
+                                ->trueIcon('heroicon-o-check-circle')
+                                ->falseIcon('heroicon-o-x-circle')
+                                ->trueColor('success')
+                                ->falseColor('danger'),
+                        ])
+                        ->columns(2),
+
+                    Section::make('其他信息')
+                        ->schema([
+                            TextEntry::make('created_at')
+                                ->label('创建时间')
+                                ->dateTime('Y-m-d H:i:s'),
+
+                            TextEntry::make('updated_at')
+                                ->label('更新时间')
+                                ->dateTime('Y-m-d H:i:s'),
+                        ])
+                        ->columns(2),
+                ]);
+        ];
+    }
+}
+```
