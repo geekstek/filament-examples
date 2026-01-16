@@ -62,6 +62,7 @@ class ListYYY extends ListRecords // YYY替换为模型名(复数)
             //     ->button(),
             CreateAction::make()
                 ->createAnother(false)
+                ->closeModalByEscaping(false)
                 ->closeModalByClickingAway(false),
         ];
     }

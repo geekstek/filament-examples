@@ -76,7 +76,7 @@ namespace Geekstek\XXX\Filament\Resources\YYY\Schemas; // XXX替换为实际的�
 
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -96,7 +96,10 @@ class YYYInfolist
     public static function getComponents(): array
     {
         return [
-            // 左侧栏
+            // 使用 Group 完成 瀑布式布局
+            // ====================
+            // 左侧列 (Left Column)
+            // ====================
             Group::make()
                 ->schema([
                     Section::make('基本信息')
@@ -150,8 +153,9 @@ class YYYInfolist
                         ])
                         ->columns(2),
                 ]),
-
-            // 右侧栏
+            // ====================
+            // 右侧列 (Right Column)
+            // ====================
             Group::make()
                 ->schema([
                     Section::make('有效期')

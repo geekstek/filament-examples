@@ -70,9 +70,9 @@ class YYYResource extends Resource
     {
         return [
             'index' => ListYYY::route('/'), // 模型名(复数)
-            'create' => CreateYYY::route('/create'),
-            'edit' => EditYYY::route('/{record}/edit'),
-            'view' => ViewYYY::route('/{record}'),
+            // 'create' => CreateYYY::route('/create'), // 默认注释掉, 使用弹窗
+            // 'edit' => EditYYY::route('/{record}/edit'), // 默认注释掉, 使用弹窗
+            // 'view' => ViewYYY::route('/{record}'), // 默认注释掉, 使用弹窗
         ];
     }
 

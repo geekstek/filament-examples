@@ -61,8 +61,11 @@ class YYYResource
             ->filters($filters)
             ->recordActions([
                 ActionGroup::make([
-                    ViewAction::make(),
-                    EditAction::make(),
+                    ViewAction::make()
+                        ->closeModalByClickingAway(false), // 必须调用这方法
+                    EditAction::make()
+                        ->closeModalByEscaping(false) // 必须调用这方法
+                        ->closeModalByClickingAway(false), // 必须调用这方法
                     DeleteAction::make(),
                     ActivityLogTimelineTableAction::make()
                         ->authorize('activity'),
